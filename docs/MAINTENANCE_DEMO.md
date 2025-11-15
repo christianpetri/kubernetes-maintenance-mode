@@ -1,8 +1,27 @@
 # Maintenance Mode Demo (Tomcat + OpenShift)
 
-Two parts you can copy-paste and run:
+A concise, copy-paste-ready guide to demonstrate application maintenance mode with proper 503 behavior for users while keeping admin access available for operations.
 
-## 1) Standalone Tomcat Demo (localhost)
+## Contents
+
+- Overview
+- Tomcat Standalone Demo
+- OpenShift Manifests
+- One-Minute Demo Script
+- Lessons Learned
+
+---
+
+## Overview
+
+- User requests receive HTTP 503 during maintenance (with `Retry-After`).
+- Liveness stays 200 (don’t restart pods just because we’re in maintenance).
+- Admin path remains available, bypassing readiness draining.
+- Maintenance state is shared across workers/pods via a simple flag.
+
+---
+
+## Tomcat Standalone Demo (localhost)
 
 ### MaintenanceFilter.java
 
@@ -27,6 +46,8 @@ public class MaintenanceFilter implements Filter {
 
         if (new File(MAINTENANCE_FLAG).exists() && !uri.startsWith(ADMIN_PATH)) {
             response.setStatus(503);
+            response.setHeader("Retry-After", "120");
+            response.setContentType("application/json");
             response.getWriter().write("{\"error\": \"Service in maintenance mode\"}");
             return;
         }
@@ -74,7 +95,7 @@ curl http://localhost:8080/admin/status        # → 200 + normal response
 
 ---
 
-## 2) OpenShift YAML Demo
+## OpenShift Manifests
 
 ### openshift/deployment.yaml
 
@@ -162,10 +183,12 @@ spec:
     termination: edge
 ```
 
-### Demo Script (Run in 60 seconds)
+---
+
+## One-Minute Demo Script
 
 ```bash
-# 1. Deploy
+# 1. Deploy (from repo root)
 oc apply -f openshift/deployment.yaml,openshift/service.yaml,openshift/route-normal.yaml,openshift/route-admin.yaml
 
 # 2. Enter maintenance mode
@@ -179,17 +202,7 @@ curl -H "Host: admin.example.com" http://$(oc get route sample-app-admin -o json
 # → 200 + full access
 ```
 
-## Summary for Tech Lead
-
-> You said: "503 kills admin access"
-
-Reality:
-
-- example.com → 503 → drained
-- admin.example.com → 200 → full access
-- Same app. Same code. Just routing rules.
-- Works on Tomcat standalone and OpenShift.
-- 503 is a signal, not a shutdown.
+---
 
 ## Lessons Learned
 
