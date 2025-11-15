@@ -211,3 +211,36 @@ curl -H "Host: admin.example.com" http://$(oc get route sample-app-admin -o json
 - Shared maintenance flag: Use a file or ConfigMap so all pods agree on state.
 - Split vs single Service: Split routes keep admin accessible without impacting user draining.
 - Headers matter: Include `Retry-After` to communicate expected back-in-service window.
+
+---
+
+## Quick Start (Windows PowerShell)
+
+- Build and run in Docker (default port 8080):
+
+```powershell
+.\scripts
+unme.ps1 -Mode docker -Build -Start -Port 8080
+```
+
+- Enable/disable maintenance in the running container:
+
+```powershell
+.\scripts
+unme.ps1 -Mode docker -EnableMaintenance
+.\scripts
+unme.ps1 -Mode docker -DisableMaintenance
+```
+
+- Deploy natively to an existing Tomcat (set `TOMCAT_HOME` first):
+
+```powershell
+$env:TOMCAT_HOME="C:\\apache-tomcat-10.1.x"
+.\scripts
+unme.ps1 -Mode native -Build -Start -Port 8080
+```
+
+Notes:
+
+- Native maintenance flag lives at `C:\tmp\maint.on`.
+- Docker maintenance flag lives at `/tmp/maint.on` inside the container.
