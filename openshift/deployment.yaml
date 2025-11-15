@@ -1,0 +1,129 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app-user
+  namespace: demo-503
+  labels:
+    app: demo-app
+    tier: user
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-app
+      tier: user
+  template:
+    metadata:
+      labels:
+        app: demo-app
+        tier: user
+    spec:
+      containers:
+      - name: app
+        image: demo-503:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: MAINTENANCE_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: MAINTENANCE_MODE
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        
+        # Liveness Probe - "Is the container alive?"
+        # Common names: /health, /healthz, /livez, /alive
+        # If fails: Container is RESTARTED by Kubernetes
+        # Should only fail for: deadlocks, crashes, unrecoverable errors
+        livenessProbe:
+          httpGet:
+            path: /health   # or /healthz (Kubernetes convention)
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # Readiness Probe - "Can the container serve traffic?"
+        # Common names: /ready, /readyz, /healthz/ready
+        # If fails: Pod REMOVED from Service endpoints (no restart)
+        # Should fail for: maintenance mode, dependencies unavailable, warming up
+        readinessProbe:
+          httpGet:
+            path: /ready    # or /readyz (Kubernetes convention)
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app-admin
+  namespace: demo-503
+  labels:
+    app: demo-app
+    tier: admin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-app
+      tier: admin
+  template:
+    metadata:
+      labels:
+        app: demo-app
+        tier: admin
+    spec:
+      containers:
+      - name: app
+        image: demo-503:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        env:
+        - name: MAINTENANCE_MODE
+          value: "false"  # Admin always has access
+        - name: X-Admin-Access
+          value: "true"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+        
+        # Liveness Probe - "Is the container alive?"
+        # If fails: Container is RESTARTED
+        livenessProbe:
+          httpGet:
+            path: /health   # or /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 3
+        
+        # Readiness Probe - "Can the container serve traffic?"
+        # If fails: Pod REMOVED from Service (no restart)
+        # Admin pods remain ready even during maintenance
+        readinessProbe:
+          httpGet:
+            path: /ready    # or /readyz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2

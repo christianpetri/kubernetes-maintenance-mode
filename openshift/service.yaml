@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app-user
+  namespace: demo-503
+  labels:
+    app: demo-app
+    tier: user
+spec:
+  selector:
+    app: demo-app
+    tier: user
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app-admin
+  namespace: demo-503
+  labels:
+    app: demo-app
+    tier: admin
+spec:
+  selector:
+    app: demo-app
+    tier: admin
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  type: ClusterIP

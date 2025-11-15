@@ -1,0 +1,77 @@
+[project]
+name = "openshift-maintenance-demo"
+version = "1.0.0"
+description = "OpenShift maintenance mode demo with 503 handling"
+authors = [{name = "Christian Petri"}]
+requires-python = ">=3.11"
+dependencies = [
+    "Flask==3.0.0",
+    "gunicorn==21.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "types-Flask",
+    "pre-commit>=3.5.0",
+]
+
+[tool.ruff]
+# Modern Python linter and formatter (replaces flake8, black, isort, etc.)
+target-version = "py311"
+line-length = 100
+
+# Enable linting rules
+lint.select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import sorting)
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "TCH",  # flake8-type-checking
+]
+
+lint.ignore = [
+    "E501",  # Line too long (handled by formatter)
+]
+
+# Exclude patterns
+extend-exclude = [
+    "__pycache__",
+    ".venv",
+    "venv",
+    "env",
+    ".git",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # Allow unused imports in __init__.py
+
+[tool.ruff.format]
+# Use double quotes for strings
+quote-style = "double"
+# Indent with spaces
+indent-style = "space"
+
+[tool.mypy]
+# Type checking configuration
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false  # Start lenient, can make stricter
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = "gunicorn.*"
+ignore_missing_imports = true

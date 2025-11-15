@@ -1,0 +1,36 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: demo-app-user
+  namespace: demo-503
+  labels:
+    app: demo-app
+    tier: user
+spec:
+  to:
+    kind: Service
+    name: demo-app-user
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: demo-app-admin
+  namespace: demo-503
+  labels:
+    app: demo-app
+    tier: admin
+spec:
+  host: admin-demo-503.apps.your-cluster.com  # Update with your cluster domain
+  to:
+    kind: Service
+    name: demo-app-admin
+  port:
+    targetPort: http
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

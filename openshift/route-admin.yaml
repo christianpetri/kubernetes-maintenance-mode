@@ -1,0 +1,14 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: sample-app-admin
+spec:
+  host: admin.example.com
+  to:
+    kind: Service
+    name: sample-app-service
+  port:
+    targetPort: 8080
+  # Ignores readiness → always reachable
+  tls:
+    termination: edge
