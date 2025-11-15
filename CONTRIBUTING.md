@@ -117,14 +117,11 @@ openshift-maintenance-demo/
 ├── README.md                       # Main documentation
 ├── CONTRIBUTING.md                 # This file
 ├── docs/                           # Documentation
-│   ├── PROBES.md                   # Probe explanation
-│   ├── PROBE_COMPARISON.md         # Quick reference
-│   ├── LOCAL_DEPLOYMENT.md         # Deployment guide
-│   └── QUICKSTART.md               # Quick start guide
-├── deploy/                         # Deployment scripts
-│   ├── kind-cluster.yaml           # Kind cluster config
-│   ├── local-deploy.sh             # Linux/macOS deploy
-│   └── local-deploy.ps1            # Windows deploy
+│   └── MAINTENANCE_DEMO.md         # Single-source demo guide
+├── deploy/                         # (Deprecated) local/kind helpers
+│   ├── kind-cluster.yaml           # Deprecated
+│   ├── local-deploy.sh             # Deprecated
+│   └── local-deploy.ps1            # Deprecated
 ├── openshift/                      # OpenShift manifests
 │   ├── namespace.yaml
 │   ├── configmap.yaml
@@ -132,8 +129,6 @@ openshift-maintenance-demo/
 │   ├── service.yaml
 │   ├── route.yaml
 │   └── hpa.yaml
-├── kubernetes/                     # Kubernetes manifests
-│   └── ingress.yaml
 ├── scripts/                        # Maintenance scripts
 │   ├── deploy.sh / deploy.ps1
 │   ├── enable-maintenance.sh / .ps1

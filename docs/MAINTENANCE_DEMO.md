@@ -1,6 +1,8 @@
 # Maintenance Mode Demo (Tomcat + OpenShift)
 
-A concise, copy-paste-ready guide to demonstrate application maintenance mode with proper 503 behavior for users while keeping admin access available for operations.
+A concise, copy-paste-ready guide to demonstrate application maintenance mode
+with proper 503 behavior for users while keeping admin access available for
+operations.
 
 ## Contents
 

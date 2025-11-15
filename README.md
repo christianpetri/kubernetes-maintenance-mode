@@ -2,7 +2,6 @@
 
 Looking for the full, copy-paste demo? See `docs/MAINTENANCE_DEMO.md`.
 
-
 ## OpenShift Maintenance Mode Demo (503)
 
 A demonstration of implementing maintenance mode in OpenShift with 503 Service Unavailable responses
@@ -15,10 +14,10 @@ for regular users while maintaining admin access during maintenance windows.
 - **503 Error Handling**: Proper HTTP 503 responses during maintenance
 - **Admin Access Preservation**: Admin interface remains accessible during maintenance
 - **Horizontal Pod Autoscaling**: Automatic scaling based on CPU and memory usage
-- **Health Checks**: Kubernetes liveness and readiness probes
+- **Health Checks**: OpenShift liveness and readiness probes
 - **Docker Compose Support**: Local testing with Docker
 
-## Prerequisites
+## Prerequisitesc
 
 - OpenShift CLI (`oc`) installed and configured
 - Docker and Docker Compose (for local testing)
@@ -58,28 +57,18 @@ for regular users while maintaining admin access during maintenance windows.
 
 ## Quick Start
 
-### Local Deployment with kind (Recommended)
+### OpenShift Deployment
 
-**Deploy to your local machine using kind (Kubernetes in Docker):**
+OpenShift manifests are in `openshift/`. Apply them with `oc`:
 
-See [LOCAL_DEPLOYMENT.md](docs/LOCAL_DEPLOYMENT.md) for complete guide.
-
-**Quick start:**
-
-```bash
-# Linux/macOS
-./deploy/local-deploy.sh
-
-# Windows (PowerShell)
-.\deploy\local-deploy.ps1
+```powershell
+oc apply -f openshift/namespace.yaml
+oc apply -f openshift/configmap.yaml
+oc apply -f openshift/deployment.yaml
+oc apply -f openshift/service.yaml
+oc apply -f openshift/route.yaml
+oc apply -f openshift/hpa.yaml
 ```
-
-This creates a local Kubernetes cluster and deploys the full application with:
-
-- Multi-node cluster (1 control-plane + 2 workers)
-- Liveness and readiness probes
-- Horizontal Pod Autoscaling
-- ConfigMap-based maintenance mode
 
 ### Local Testing with Docker
 
@@ -309,14 +298,11 @@ openshift-maintenance-demo/
 ├── README.md                       # Main documentation
 ├── CONTRIBUTING.md                 # Developer guidelines
 ├── docs/                           # Documentation
-│   ├── PROBES.md                   # Probe explanation
-│   ├── PROBE_COMPARISON.md         # Quick reference
-│   ├── LOCAL_DEPLOYMENT.md         # Deployment guide
-│   └── QUICKSTART.md               # Quick start guide
-├── deploy/                         # Deployment scripts
-│   ├── kind-cluster.yaml           # Kind cluster config
-│   ├── local-deploy.sh             # Linux/macOS deploy
-│   └── local-deploy.ps1            # Windows deploy
+│   └── MAINTENANCE_DEMO.md         # Single-source demo guide
+├── deploy/                         # (Deprecated) local/kind helpers
+│   ├── kind-cluster.yaml           # Deprecated
+│   ├── local-deploy.sh             # Deprecated
+│   └── local-deploy.ps1            # Deprecated
 ├── openshift/                      # OpenShift manifests
 │   ├── namespace.yaml
 │   ├── configmap.yaml
@@ -324,8 +310,6 @@ openshift-maintenance-demo/
 │   ├── service.yaml
 │   ├── route.yaml
 │   └── hpa.yaml
-├── kubernetes/                     # Kubernetes manifests
-│   └── ingress.yaml
 ├── scripts/                        # Maintenance scripts
 │   ├── deploy.sh / deploy.ps1
 │   ├── enable-maintenance.sh / .ps1

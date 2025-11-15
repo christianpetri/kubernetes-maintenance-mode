@@ -91,12 +91,10 @@ MAINTENANCE_PAGE = """
 <body>
     <div class="container">
         <h1>⚠️ Scheduled Maintenance</h1>
-        
         <div class="warning">
             <strong>Service Unavailable</strong><br>
             The application is currently in maintenance mode.
         </div>
-        
         <div class="info">
             <strong>What's happening:</strong>
             <ul style="margin: 10px 0;">
@@ -106,9 +104,7 @@ MAINTENANCE_PAGE = """
                 <li>End‑user endpoints return 503; admin remains accessible</li>
             </ul>
         </div>
-        
-        <p>This demonstrates graceful degradation in OpenShift/Kubernetes where pods report "not ready" during maintenance, removing them from the load balancer without killing the containers.</p>
-        
+        <p>This demonstrates graceful degradation in OpenShift where pods report "not ready" during maintenance, removing them from the load balancer without killing the containers.</p>
         <a href="/admin">Admin Panel</a>
     </div>
 </body>
@@ -156,12 +152,10 @@ ADMIN_PAGE = """
                 <li>Readiness stays <span class="code">200</span> so admins can reach this page and end maintenance.</li>
             </ul>
         </div>
-        
         <div class="status {{ 'on' if maintenance_mode else 'off' }}">
             <div class="status-label">Current Status</div>
             <div class="status-value">{{ maintenance_status }}</div>
         </div>
-        
         <form action="/admin/toggle" method="POST">
             {% if maintenance_mode %}
             <button type="submit" class="btn-success">
@@ -173,7 +167,6 @@ ADMIN_PAGE = """
             </button>
             {% endif %}
         </form>
-        
         <div class="info-box">
             <h3>How it works:</h3>
             <ul>
@@ -183,7 +176,6 @@ ADMIN_PAGE = """
                 <li><strong>State storage:</strong> Filesystem flag shared across Gunicorn workers</li>
             </ul>
         </div>
-        
         <p style="margin-top: 30px; color: #666;">
             <a href="/">← Back to Home</a>
         </p>
@@ -207,9 +199,7 @@ def admin():
     """Admin panel - always accessible."""
     maintenance_status = "MAINTENANCE ON" if is_maintenance_mode() else "NORMAL OPERATION"
     return render_template_string(
-        ADMIN_PAGE,
-        maintenance_status=maintenance_status,
-        maintenance_mode=is_maintenance_mode()
+        ADMIN_PAGE, maintenance_status=maintenance_status, maintenance_mode=is_maintenance_mode()
     )
 
 
@@ -223,7 +213,7 @@ def toggle_maintenance():
     else:
         # Enable maintenance
         MAINTENANCE_FLAG.touch()
-    
+
     return redirect("/admin")
 
 
@@ -232,9 +222,9 @@ def toggle_maintenance():
 def health():
     """
     Liveness Probe - Is the application alive?
-    
+
     Returns 200 if process is running (even during maintenance).
-    Kubernetes restarts the pod only if this fails.
+    OpenShift restarts the container only if this fails.
     """
     return {
         "status": "healthy",
@@ -248,9 +238,9 @@ def health():
 def ready():
     """
     Readiness Probe - Can the application serve traffic?
-    
+
     Returns 503 during maintenance mode.
-    Kubernetes removes pod from Service endpoints (no restart).
+    OpenShift removes the pod from Service endpoints (no restart).
     """
     if is_maintenance_mode():
         return {
@@ -259,7 +249,7 @@ def ready():
             "maintenance_mode": True,
             "message": "Application in maintenance mode",
         }, 503
-    
+
     return {
         "status": "ready",
         "probe_type": "readiness",
