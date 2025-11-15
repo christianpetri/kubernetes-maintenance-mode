@@ -1,15 +1,15 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: demo-app-user
-  namespace: demo-503
+  name: sample-app-user
+  namespace: sample-app
   labels:
-    app: demo-app
+    app: sample-app
     tier: user
 spec:
   to:
     kind: Service
-    name: demo-app-user
+    name: sample-app-user
   port:
     targetPort: http
   tls:
@@ -19,16 +19,16 @@ spec:
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: demo-app-admin
-  namespace: demo-503
+  name: sample-app-admin
+  namespace: sample-app
   labels:
-    app: demo-app
+    app: sample-app
     tier: admin
 spec:
-  host: admin-demo-503.apps.your-cluster.com  # Update with your cluster domain
+  host: admin-sample-app.apps.your-cluster.com  # Update with your cluster domain
   to:
     kind: Service
-    name: demo-app-admin
+    name: sample-app-admin
   port:
     targetPort: http
   tls:

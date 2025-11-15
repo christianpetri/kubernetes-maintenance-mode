@@ -1,26 +1,26 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: demo-app-user
-  namespace: demo-503
+  name: sample-app-user
+  namespace: sample-app
   labels:
-    app: demo-app
+    app: sample-app
     tier: user
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: demo-app
+      app: sample-app
       tier: user
   template:
     metadata:
       labels:
-        app: demo-app
+        app: sample-app
         tier: user
     spec:
       containers:
       - name: app
-        image: demo-503:latest
+        image: sample-app:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -68,26 +68,26 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: demo-app-admin
-  namespace: demo-503
+  name: sample-app-admin
+  namespace: sample-app
   labels:
-    app: demo-app
+    app: sample-app
     tier: admin
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: demo-app
+      app: sample-app
       tier: admin
   template:
     metadata:
       labels:
-        app: demo-app
+        app: sample-app
         tier: admin
     spec:
       containers:
       - name: app
-        image: demo-503:latest
+        image: sample-app:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
