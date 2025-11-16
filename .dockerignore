@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.py[cod]
+*$py.class
+.venv
+venv/
+env/
+ENV/
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# Testing
+.pytest_cache
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Documentation
+docs/
+*.md
+README.md
+CONTRIBUTING.md
+LICENSE
+
+# Scripts
+scripts/
+
+# Kubernetes
+kubernetes/
+
+# CI/CD
+.github/
+.pre-commit-config.yaml
+.markdownlint.json
+
+# Build artifacts
+dist/
+build/
+*.egg-info/

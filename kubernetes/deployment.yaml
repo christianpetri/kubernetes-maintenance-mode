@@ -85,7 +85,7 @@ spec:
         env:
         - name: MAINTENANCE_MODE
           value: "false"
-        - name: X-Admin-Access
+        - name: ADMIN_ACCESS
           value: "true"
         resources:
           requests:

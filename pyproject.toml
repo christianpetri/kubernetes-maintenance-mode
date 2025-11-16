@@ -1,7 +1,7 @@
 [project]
-name = "openshift-maintenance-demo"
+name = "kubernetes-maintenance-demo"
 version = "1.0.0"
-description = "OpenShift maintenance mode demo with 503 handling"
+description = "Kubernetes maintenance mode demo with Flask best practices"
 authors = [{name = "Christian Petri"}]
 requires-python = ">=3.11"
 dependencies = [

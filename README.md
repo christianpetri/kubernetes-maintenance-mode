@@ -1,29 +1,83 @@
 # Maintenance Mode Demo - Kubernetes Edition
 
-A demonstration of implementing maintenance mode in Kubernetes with 503 Service Unavailable responses
-for regular users while **guaranteeing admin access remains available** during maintenance windows.
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.28+-blue.svg)](https://kubernetes.io/)
+[![Flask](https://img.shields.io/badge/Flask-3.0+-green.svg)](https://flask.palletsprojects.com/)
+
+Kubernetes maintenance mode using Flask's `@app.before_request` with 503 responses for users
+while **guaranteeing admin access remains available**.
+
+**Quick Links:**
+[Architecture](#architecture) •
+[Quick Start](#quick-start) •
+[Flask Pattern](#flask-best-practice-pattern) •
+[Troubleshooting](#troubleshooting)
+
+## Table of Contents
+
+- [Key Innovation](#key-innovation-admin-always-accessible)
+- [Features](#features)
+- [Prerequisites](#prerequisites)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Understanding the Architecture](#understanding-the-architecture)
+- [Demo Script](#demo-script)
+- [Project Structure](#project-structure)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Key Takeaways](#key-takeaways)
+- [Further Reading](#further-reading)
 
 ## Key Innovation: Admin Always Accessible
 
-This demo solves a critical problem: **How do you disable maintenance mode if the readiness check
-prevents all pods from receiving traffic?**
+Solves: **How do you disable maintenance mode if readiness checks prevent all pods from receiving traffic?**
 
 **Solution**: Separate deployments with different readiness behaviors:
 
-- **User pods**: Return 503 from `/ready` during maintenance → removed from Service (no traffic)
+- **User pods**: Return 503 from `/ready` during maintenance → removed from Service
 - **Admin pods**: Always return 200 from `/ready` → stay in Service (always accessible)
 
-This ensures administrators can **always access the control panel** to disable maintenance mode,
-even when user traffic is blocked.
+## Flask Best Practice Pattern
+
+Uses Flask's **`@app.before_request` decorator** (industry standard):
+
+```python
+@app.before_request
+def check_maintenance():
+    """Intercept all requests before routing - Flask standard pattern."""
+    if request.path in ['/health', '/healthz', '/ready', '/readyz'] or request.path.startswith('/admin'):
+        return None
+    
+    if is_maintenance_mode():
+        return maintenance_response()  # 503 with proper headers
+```
+
+**Benefits:**
+
+- Single point of maintenance control (DRY principle)
+- Clean separation of concerns
+- No duplicate logic in route handlers
+- Follows Flask documentation patterns
 
 ## Features
 
-- **Dual-tier Architecture**: Separate user and admin deployments with independent readiness logic
-- **Admin Always Ready**: Admin pods never fail readiness checks, preventing operational lockout
-- **Graceful Degradation**: User pods removed from load balancer during maintenance (no restarts)
-- **503 Error Handling**: Proper HTTP 503 responses with Retry-After headers
-- **ConfigMap-Based Toggle**: Simple `kubectl patch` to enable/disable maintenance
-- **Modern UI**: Clean, demo-ready interface with Kubernetes metrics
+- **Flask Best Practice**: `@app.before_request` decorator (industry standard pattern)
+- **Admin Always Accessible**: Separate deployment ensures control panel availability
+- **Graceful Degradation**: Pods removed from load balancer (no restarts needed)
+- **Proper HTTP Semantics**: 503 with Retry-After and Cache-Control headers
+- **ConfigMap Toggle**: Simple `kubectl patch` to enable/disable
+- **Modern UI**: Clean interface with Kubernetes metrics
+
+## What You'll Learn
+
+This demo teaches practical Kubernetes patterns for production operations:
+
+✅ **Kubernetes Readiness Probes** - How to use health checks to control traffic routing  
+✅ **Service Endpoint Management** - Understanding how Kubernetes routes traffic to healthy pods  
+✅ **Graceful Degradation** - Implementing maintenance mode without pod restarts  
+✅ **Operational Safety** - Preventing admin lockout during maintenance windows  
+✅ **ConfigMap-Based Configuration** - Dynamic application configuration in Kubernetes  
+✅ **Multi-Deployment Architecture** - When to use separate deployments for different roles  
 
 ## Prerequisites
 
@@ -77,71 +131,62 @@ even when user traffic is blocked.
 
 ## Quick Start
 
-### 1. Start Minikube
+**Get started in 5 minutes:**
+
+### 1. Clone the Repository
 
 ```powershell
-minikube start --cpus=4 --memory=8192 --driver=docker
-minikube status
+git clone https://github.com/YourOrg/Demo_503.git
+cd Demo_503
 ```
 
-### 2. Build and Deploy
+### 2. Setup the Environment
 
 ```powershell
-# Build the Docker image in Minikube's Docker environment
-minikube docker-env | Invoke-Expression
-docker build -t sample-app:latest .
-
-# Deploy to Kubernetes
-kubectl apply -f kubernetes/namespace.yaml
-kubectl apply -f kubernetes/configmap.yaml
-kubectl apply -f kubernetes/deployment.yaml
-kubectl apply -f kubernetes/service.yaml
-kubectl apply -f kubernetes/ingress.yaml
-
-# Wait for pods to be ready
-kubectl get pods -n sample-app -w
+.\scripts\runme.ps1 setup
 ```
+
+This will:
+
+- Start Minikube cluster (Docker driver, 4 CPUs, 8GB RAM)
+- Build the Flask application Docker image
+- Deploy user and admin services to Kubernetes
+- Wait for all pods to be ready
 
 ### 3. Access the Application
 
-```powershell
-# Port-forward user service (will show maintenance page when enabled)
-kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
+Open your browser:
 
-# Port-forward admin service (ALWAYS accessible)
-kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
+- **User Interface:** `http://localhost:30080`
+- **Admin Interface:** `http://localhost:30080/admin`
+
+### 4. Enable Maintenance Mode
+
+```powershell
+.\scripts\runme.ps1 enable
 ```
 
-Access at:
+Result:
 
-- **User endpoint**: <http://localhost:9090> (503 during maintenance)
-- **Admin endpoint**: <http://localhost:9092> (always accessible)
+- User page shows: "503 - Maintenance Mode"
+- Admin page still accessible and shows "Maintenance Mode is ON"
 
-### 4. Toggle Maintenance Mode
-
-**Enable maintenance:**
+### 5. Disable Maintenance Mode
 
 ```powershell
-kubectl patch configmap app-config -n sample-app --type=json `
-  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "true"}]'
-kubectl rollout restart deployment -n sample-app
+.\scripts\runme.ps1 disable
 ```
 
-**Observe the behavior:**
+Or use the admin panel button to toggle maintenance mode via UI.
+
+### Additional Commands
 
 ```powershell
-kubectl get pods -n sample-app
-# You'll see:
-# - Admin pods: 1/1 Ready (ALWAYS accessible)
-# - User pods: 0/1 Not Ready (removed from Service)
-```
+# Check maintenance status and pod health
+.\scripts\runme.ps1 status
 
-**Disable maintenance:**
-
-```powershell
-kubectl patch configmap app-config -n sample-app --type=json `
-  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "false"}]'
-kubectl rollout restart deployment -n sample-app
+# Clean up everything
+.\scripts\runme.ps1 clean
 ```
 
 ## Understanding the Architecture
@@ -210,66 +255,47 @@ This ensures **administrators can always reach the control panel** to disable ma
 
 ## Demo Script
 
-### Full Demo Flow
+### Interactive Demonstration
 
-1. **Show normal operation:**
+**1. Show normal operation:**
 
-   ```powershell
-   # Check pod status (all ready)
-   kubectl get pods -n sample-app
-   # Output: All pods 1/1 Ready
-   
-   # Access user endpoint
-   Start-Process http://localhost:9090  # Shows normal page
-   ```
+```powershell
+# Check pod status (all ready)
+.\scripts\runme.ps1 status
+# Output: Maintenance Mode is OFF, all pods 1/1 Ready
 
-2. **Enable maintenance mode:**
+# Access the application
+Start-Process http://localhost:30080  # Shows normal page
+```
 
-   ```powershell
-   kubectl patch configmap app-config -n sample-app --type=json `
-     -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "true"}]'
-   kubectl rollout restart deployment -n sample-app
-   Start-Sleep -Seconds 15
-   ```
+**2. Enable maintenance mode:**
 
-3. **Observe the critical behavior:**
+```powershell
+.\scripts\runme.ps1 enable
+```
 
-   ```powershell
-   kubectl get pods -n sample-app
-   # Output:
-   # sample-app-admin-xxx   1/1     Running   (ALWAYS READY)
-   # sample-app-user-xxx    0/1     Running   (NOT READY - removed from Service)
-   ```
+**3. Observe the critical behavior:**
 
-4. **Verify traffic routing:**
+```powershell
+.\scripts\runme.ps1 status
+# Output:
+# Maintenance Mode is ON
+# sample-app-admin-xxx   1/1     Running   (ALWAYS READY)
+# sample-app-user-xxx    0/1     Running   (NOT READY - removed from Service)
+```
 
-   ```powershell
-   # User endpoint - shows 503 maintenance page
-   Start-Process http://localhost:9090
-   
-   # Admin endpoint - STILL ACCESSIBLE
-   Start-Process http://localhost:9092  # Can disable maintenance from here!
-   ```
+**4. Verify traffic routing:**
 
-5. **Disable maintenance from admin panel:**
-   - Navigate to <http://localhost:9092>
-   - Use the control panel to disable maintenance
-   - Or use kubectl:
+- User endpoint: <http://localhost:30080> - shows 503 maintenance page
+- Admin endpoint: <http://localhost:30080/admin> - STILL ACCESSIBLE
+- Admin can disable maintenance from the control panel!
 
-   ```powershell
-   kubectl patch configmap app-config -n sample-app --type=json `
-     -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "false"}]'
-   kubectl rollout restart deployment -n sample-app
-   ```
+**5. Disable maintenance:**
 
-6. **Verify restoration:**
-
-   ```powershell
-   kubectl get pods -n sample-app
-   # Output: All pods back to 1/1 Ready
-   
-   Start-Process http://localhost:9090  # Shows normal page again
-   ```
+```powershell
+.\scripts\runme.ps1 disable
+# Or click the button in admin panel at http://localhost:30080/admin
+```
 
 ## Project Structure
 
@@ -366,6 +392,44 @@ minikube start --cpus=4 --memory=8192 --driver=docker
 minikube docker-env | Invoke-Expression
 docker build -t sample-app:latest .
 ```
+
+## Real-World Use Cases
+
+This maintenance mode pattern is applicable to many production scenarios:
+
+### 🔧 Planned Maintenance Windows
+
+- Database migrations requiring application downtime
+- Infrastructure upgrades (storage, network, security patches)
+- Third-party service integrations causing temporary unavailability
+- Admins need access to monitor progress and disable maintenance early if possible
+
+### 🚀 Deployment Strategies
+
+- Blue-green deployments with user-facing traffic paused
+- Canary releases where new versions are tested by admins first
+- Database schema changes requiring application-level coordination
+
+### 🛡️ Emergency Response
+
+- DDoS mitigation: Block public traffic while admins investigate
+- Security incidents: Isolate user access while maintaining operational visibility
+- Performance issues: Reduce load while diagnosing problems
+
+### 🔄 Data Processing
+
+- Batch processing jobs that require exclusive database access
+- ETL operations that temporarily block user queries
+- Cache rebuilding or reindexing operations
+
+### 🏢 Enterprise Scenarios
+
+- Compliance audits requiring system freeze
+- Financial close periods with read-only data
+- Legal holds where user modifications must be prevented
+
+**Key Benefit:** In all cases, administrators retain full access to monitor, manage, and resolve issues
+without being locked out by the maintenance mode itself.
 
 ## Key Takeaways
 

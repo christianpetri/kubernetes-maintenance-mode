@@ -1,18 +1,38 @@
 # Kubernetes Maintenance Mode Demo
 
-A practical guide demonstrating maintenance mode implementation with proper 503 behavior
-while **guaranteeing admin access remains available**.
+Practical guide for implementing maintenance mode using Flask's `@app.before_request` decorator with guaranteed admin access.
 
-## Critical Architecture Pattern
+## Architecture Pattern
 
-**The Problem**: How do you disable maintenance mode if readiness checks prevent all pods from receiving traffic?
+**Problem**: How do you disable maintenance mode if readiness checks block all traffic?
 
-**The Solution**: Separate deployments with different readiness probe behaviors:
+**Solution**: Separate deployments with different readiness behaviors:
 
-- **User Pods**: Return 503 from `/ready` during maintenance → Removed from Service
-- **Admin Pods**: Always return 200 from `/ready` → Stay in Service (always accessible)
+- **User Pods**: Return 503 from `/ready` → Removed from load balancer
+- **Admin Pods**: Always return 200 from `/ready` → Always accessible
 
-This pattern ensures **administrators can always access the control panel** to disable maintenance mode.
+## Flask Implementation Pattern
+
+**Uses `@app.before_request` decorator** (Flask industry standard):
+
+```python
+@app.before_request
+def check_maintenance():
+    """Intercept all requests before routing."""
+    # Skip probes and admin routes
+    if request.path in ['/health', '/healthz', '/ready', '/readyz'] or request.path.startswith('/admin'):
+        return None
+    
+    # Return 503 for user routes during maintenance
+    if is_maintenance_mode():
+        response = app.make_response(render_template_string(MAINTENANCE_PAGE))
+        response.status_code = 503
+        response.headers["Retry-After"] = "1800"
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        return response
+```
+
+**Benefits**: Single point of control, follows Flask patterns, no duplicate logic.
 
 ---
 
@@ -117,34 +137,30 @@ kubectl rollout restart deployment -n sample-app
 
 ## Architecture Details
 
-### Application Code (app.py)
+### Application Code Structure
 
 ```python
-def is_admin_access():
-    """Check if this pod has admin privileges"""
-    return os.environ.get('X-Admin-Access', '').lower() == 'true'
+# Flask best practice: @app.before_request intercepts ALL requests before routing
+@app.before_request
+def check_maintenance():
+    if request.path in ['/health', '/healthz', '/ready', '/readyz'] or request.path.startswith('/admin'):
+        return None  # Skip maintenance check
+    if is_maintenance_mode():
+        return maintenance_response()  # 503 with proper headers
 
-def is_maintenance_mode():
-    """Check if maintenance mode is enabled"""
-    return os.environ.get('MAINTENANCE_MODE', 'false').lower() == 'true'
-
+# Readiness probe: Different behavior for user vs admin pods
 @app.route('/ready')
 def ready():
-    """Readiness probe - determines if pod receives traffic"""
-    if is_admin_access():
-        # Admin pods ALWAYS ready (guaranteed access)
-        return jsonify({"status": "ready", "pod_type": "admin"}), 200
-    
-    if is_maintenance_mode():
-        # User pods fail readiness during maintenance
-        return jsonify({"status": "not_ready", "reason": "maintenance"}), 503
-    
-    return jsonify({"status": "ready", "pod_type": "user"}), 200
+    if is_admin_access():  # Admin pods always ready
+        return {"status": "ready", "pod_type": "admin"}, 200
+    if is_maintenance_mode():  # User pods fail during maintenance
+        return {"status": "not_ready", "maintenance_mode": True}, 503
+    return {"status": "ready"}, 200
 
+# Liveness probe: Always 200 (don't restart healthy pods)
 @app.route('/health')
 def health():
-    """Liveness probe - always returns 200 (don't restart healthy pods)"""
-    return jsonify({"status": "healthy"}), 200
+    return {"status": "healthy"}, 200
 ```
 
 ### Kubernetes Deployments

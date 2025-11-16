@@ -1,17 +1,20 @@
-[x] Verify that the copilot-instructions.md file in the .github directory is created.
+# GitHub Copilot Instructions - Kubernetes Maintenance Mode Demo
 
-[ ] Clarify Project Requirements
+## Project Overview
+Flask application demonstrating Kubernetes maintenance mode using `@app.before_request` decorator with guaranteed admin access during maintenance windows.
 
-[ ] Scaffold the Project: Use project setup tool to generate files in '.'; if unavailable, create structure manually.
+## Key Architecture Decisions
+1. **Flask Pattern**: Uses `@app.before_request` decorator (industry standard)
+2. **Dual Deployments**: Separate user/admin pods with different readiness logic
+3. **Graceful Degradation**: Readiness probes remove pods from load balancer (no restarts)
 
-[ ] Customize the Project: Plan modifications per requirements; apply changes; skip for simple "Hello World" apps.
+## Development Guidelines
+- **Code Style**: Follow Flask best practices, use Ruff for linting
+- **Testing**: Test with Minikube, verify both user and admin pod behaviors
+- **Documentation**: Keep README concise, update MAINTENANCE_DEMO.md for details
 
-[ ] Install Required Extensions: Only those mentioned in project setup info (if provided).
-
-[ ] Compile the Project: Install deps, run diagnostics, resolve issues; consult project markdown instructions.
-
-[ ] Create and Run Task: Create tasks.json if needed and launch a task appropriate to the project.
-
-[ ] Launch the Project: Prompt for debug mode; launch only if confirmed.
-
-[ ] Ensure Documentation is Complete: Ensure README.md and this file exist and reflect current project info.
+## Current State
+✅ Complete production-ready implementation
+✅ Refactored to Flask best practice pattern
+✅ All documentation updated
+✅ Docker and Kubernetes manifests ready
