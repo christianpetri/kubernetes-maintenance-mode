@@ -1,39 +1,61 @@
 """
 Kubernetes Maintenance Mode Demo - Production Best Practices
 
-**How Professionals Handle Maintenance Windows:**
+**How Professionals Handle Maintenance Windows in Large Apps:**
 
-1. **Graceful Shutdown (15-30 seconds)**
-   - Pod receives SIGTERM signal when maintenance starts
-   - Application continues serving existing requests
-   - New connections are drained as endpoints propagate
-   - Database connections/WebSockets closed cleanly
+1. **Active User Session Tracking**
+   - Track all logged-in users with session IDs
+   - Monitor login time, last activity, which pod they're on
+   - Admin dashboard shows real-time active sessions (/admin/users)
+   - In production: Use Redis/Memcached for cross-pod visibility
 
-2. **Readiness Probe Pattern**
+2. **Graceful Shutdown with User Notification**
+   - Pod receives SIGTERM when Kubernetes starts shutdown
+   - Send SSE (Server-Sent Events) to all active users
+   - Display "server shutting down in 60s" banner
+   - Wait 60 seconds for users to save work and logout
+   - Track graceful vs forced logouts (metrics)
+   - Users see countdown and can logout gracefully
+
+3. **Server-Sent Events (SSE) for Real-Time Push**
+   - /events endpoint streams notifications to clients
+   - Simpler than WebSockets (just HTTP)
+   - Auto-reconnects on disconnect
+   - Used for: drain warnings, maintenance alerts, logout countdown
+
+4. **Metrics & Monitoring (Prometheus)**
+   - active_sessions_total: Current logged-in users
+   - drain_notifications_sent: How many users notified
+   - graceful_logouts_total: Users who logged out after warning
+   - forced_logouts_total: Sessions force-closed after timeout
+   - /metrics endpoint exposes all metrics
+
+5. **Readiness Probe Pattern**
    - User pods return 503 during maintenance
    - Kubernetes removes pod from Service endpoints
    - Load balancer stops sending new traffic
    - No pod restarts - just removed from rotation
 
-3. **Admin Access Guarantee**
+6. **Admin Access Guarantee**
    - Separate admin deployment always bypasses maintenance
    - Admin pods always return 200 on readiness probe
-   - Allows operators to control and monitor during maintenance
+   - Allows operators to monitor active users during drain
 
-4. **Connection Draining**
-   - terminationGracePeriodSeconds: 30s default (configurable)
-   - preStop hook can add extra delay (e.g., sleep 15)
-   - Gives time for endpoints to propagate to all components:
-     * kube-proxy (iptables rules)
-     * Ingress controllers
-     * CoreDNS
-     * Service meshes (Istio/Linkerd)
+7. **Connection Draining Flow**
+   - terminationGracePeriodSeconds: 75s (60s user drain + 15s endpoint propagation)
+   - Send drain notification via SSE
+   - Wait 60s for graceful logout
+   - Force-close remaining sessions
+   - Wait 15s for endpoint propagation
+   - Exit cleanly
 
-5. **Long-Running Work**
-   - For WebSockets/long-polling: use Rainbow Deployments
-   - Create new Deployment for each release
-   - Old deployment drains connections naturally
-   - Scale to zero when all connections closed
+8. **Scale-Down Coordination**
+   - When scaling down (kubectl scale deployment user --replicas=0):
+   - Kubernetes sends SIGTERM to pods
+   - Each pod notifies its active users
+   - Wait for users to logout (60s timeout)
+   - Metrics track graceful vs forced logouts
+   - Ops can monitor /admin/users to see drain progress
 
 **File-Based Toggle Limitation:**
 The toggle button works locally but NOT in Kubernetes production.
@@ -46,11 +68,15 @@ import signal
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
+from threading import Lock
+from uuid import uuid4
 
-from flask import Flask, jsonify, redirect, render_template_string, request
+from flask import Flask, Response, jsonify, redirect, render_template_string, request, session
 
 app = Flask(__name__)
+app.secret_key = os.urandom(24)  # For session management
 
 # Maintenance flag file (local development only - doesn't work in K8s)
 # Use temp directory that works cross-platform (Windows/Linux)
@@ -58,6 +84,26 @@ MAINTENANCE_FLAG = Path(tempfile.gettempdir()) / "maintenance.flag"
 
 # Track graceful shutdown state
 SHUTTING_DOWN = False
+
+# Active user sessions tracking (production pattern)
+# In real production: use Redis/Memcached for multi-pod visibility
+# For demo: in-memory dict showing the pattern
+ACTIVE_SESSIONS = {}  # {session_id: {"user": "username", "login_time": datetime, "last_activity": datetime, "pod": hostname}}
+SESSIONS_LOCK = Lock()
+
+# SSE (Server-Sent Events) clients for real-time notifications
+SSE_CLIENTS = []  # List of Response generators
+SSE_LOCK = Lock()
+
+# Metrics for monitoring
+METRICS = {
+    "active_sessions_total": 0,
+    "drain_notifications_sent": 0,
+    "graceful_logouts_total": 0,
+    "forced_logouts_total": 0,
+    "total_logins": 0,
+}
+METRICS_LOCK = Lock()
 
 
 def is_maintenance_mode():
@@ -84,19 +130,68 @@ def graceful_shutdown(signum, frame):
     """
     Handle SIGTERM for graceful shutdown (Kubernetes best practice).
 
+    **PRODUCTION PATTERN: Notify Active Users Before Shutdown**
+    
     When Kubernetes deletes a pod:
     1. Endpoints removed from Service (starts here)
     2. SIGTERM sent to container (we handle it here)
     3. Wait terminationGracePeriodSeconds (default 30s)
     4. SIGKILL if still running
 
-    Best practice: Wait 15s to let endpoint removal propagate,
-    then close connections and exit cleanly.
+    **Graceful Drain Flow for Large Apps:**
+    1. Set SHUTTING_DOWN flag (stop accepting new sessions)
+    2. Send SSE notification to all connected users
+    3. Wait 60 seconds for users to save work and logout
+    4. Force-close remaining sessions
+    5. Exit cleanly
+    
+    This pattern gives users time to:
+    - Save unsaved work
+    - Close WebSocket connections gracefully
+    - See "server shutting down" message
+    - Logout cleanly (tracked in metrics)
     """
     global SHUTTING_DOWN
     SHUTTING_DOWN = True
     
     print(f"[GRACEFUL SHUTDOWN] Received SIGTERM signal", file=sys.stderr)
+    
+    # Count active users before drain
+    with SESSIONS_LOCK:
+        active_count = len(ACTIVE_SESSIONS)
+    
+    print(f"[GRACEFUL SHUTDOWN] {active_count} active users detected", file=sys.stderr)
+    
+    # Notify all connected clients via SSE
+    if active_count > 0:
+        print(f"[GRACEFUL SHUTDOWN] Sending drain notification to {active_count} users...", file=sys.stderr)
+        send_sse_event("drain", {
+            "message": "Server shutting down in 60 seconds. Please save your work and logout.",
+            "countdown": 60,
+            "forced_logout_at": (datetime.now() + timedelta(seconds=60)).isoformat()
+        })
+        
+        with METRICS_LOCK:
+            METRICS["drain_notifications_sent"] += active_count
+        
+        # Wait 60 seconds for graceful logout (production pattern)
+        print(f"[GRACEFUL SHUTDOWN] Waiting 60s for users to logout gracefully...", file=sys.stderr)
+        for i in range(60, 0, -10):
+            time.sleep(10)
+            with SESSIONS_LOCK:
+                remaining = len(ACTIVE_SESSIONS)
+            print(f"[GRACEFUL SHUTDOWN] {remaining} users remaining ({i-10}s left)...", file=sys.stderr)
+        
+        # Force-close remaining sessions
+        with SESSIONS_LOCK:
+            forced_count = len(ACTIVE_SESSIONS)
+            if forced_count > 0:
+                print(f"[GRACEFUL SHUTDOWN] Force-closing {forced_count} remaining sessions", file=sys.stderr)
+                with METRICS_LOCK:
+                    METRICS["forced_logouts_total"] += forced_count
+                ACTIVE_SESSIONS.clear()
+    
+    # Additional 15s wait for endpoint propagation
     print(f"[GRACEFUL SHUTDOWN] Waiting 15s for endpoint removal to propagate...", file=sys.stderr)
     
     # Give Kubernetes time to remove endpoints from:
@@ -115,7 +210,238 @@ def graceful_shutdown(signum, frame):
 signal.signal(signal.SIGTERM, graceful_shutdown)
 
 
-# HTML Templates
+# ============================================================================
+# SESSION MANAGEMENT & TRACKING (Production Pattern)
+# ============================================================================
+
+def get_or_create_session_id():
+    """Get existing session ID or create new one."""
+    if "session_id" not in session:
+        session["session_id"] = str(uuid4())
+        session["login_time"] = datetime.now().isoformat()
+        
+        # Track new session
+        with SESSIONS_LOCK:
+            ACTIVE_SESSIONS[session["session_id"]] = {
+                "user": session.get("username", "anonymous"),
+                "login_time": datetime.now(),
+                "last_activity": datetime.now(),
+                "pod": os.getenv("HOSTNAME", "localhost"),
+            }
+        
+        with METRICS_LOCK:
+            METRICS["total_logins"] += 1
+            METRICS["active_sessions_total"] = len(ACTIVE_SESSIONS)
+    
+    return session["session_id"]
+
+
+def update_session_activity(session_id):
+    """Update last activity timestamp for session (production pattern)."""
+    with SESSIONS_LOCK:
+        if session_id in ACTIVE_SESSIONS:
+            ACTIVE_SESSIONS[session_id]["last_activity"] = datetime.now()
+
+
+def send_sse_event(event_type, data):
+    """Send Server-Sent Event to all connected clients (production pattern)."""
+    with SSE_LOCK:
+        for client_queue in SSE_CLIENTS[:]:  # Copy list to avoid modification during iteration
+            try:
+                client_queue.append({"event": event_type, "data": data})
+            except Exception as e:
+                print(f"[SSE] Error sending to client: {e}", file=sys.stderr)
+                SSE_CLIENTS.remove(client_queue)
+
+
+# ============================================================================
+# ENDPOINTS: Server-Sent Events (SSE) for Real-Time Notifications
+# ============================================================================
+
+@app.route("/events")
+def events():
+    """
+    Server-Sent Events endpoint (production pattern for real-time notifications).
+    
+    Allows server to push notifications to clients:
+    - Maintenance mode activation
+    - Drain warnings ("save your work, logging out in 60s")
+    - Pod shutdown notifications
+    
+    SSE is better than WebSockets for one-way notifications:
+    - Simpler (just HTTP)
+    - Auto-reconnects
+    - Works through proxies/firewalls
+    - No binary protocol complexity
+    """
+    def event_stream():
+        client_queue = []
+        with SSE_LOCK:
+            SSE_CLIENTS.append(client_queue)
+        
+        try:
+            # Send initial connection confirmation
+            yield f"data: {{'event': 'connected', 'message': 'SSE connection established'}}\n\n"
+            
+            # Keep connection alive and send events
+            while True:
+                if client_queue:
+                    event = client_queue.pop(0)
+                    import json
+                    yield f"event: {event['event']}\ndata: {json.dumps(event['data'])}\n\n"
+                else:
+                    # Heartbeat every 30 seconds
+                    yield ": heartbeat\n\n"
+                time.sleep(1)
+        finally:
+            with SSE_LOCK:
+                if client_queue in SSE_CLIENTS:
+                    SSE_CLIENTS.remove(client_queue)
+    
+    return Response(event_stream(), mimetype="text/event-stream")
+
+
+# ============================================================================
+# ENDPOINTS: Admin Dashboard - Active Users
+# ============================================================================
+
+@app.route("/admin/users")
+def admin_users():
+    """
+    Admin dashboard showing active user sessions (production pattern).
+    
+    Shows:
+    - Total active sessions count
+    - User details (session ID, username, login time, last activity)
+    - Which pod they're connected to
+    - Session duration
+    
+    In production: This would query Redis/Memcached to see sessions
+    across ALL pods. For demo: shows this pod's sessions.
+    """
+    if not is_admin_access():
+        return jsonify({"error": "Admin access required"}), 403
+    
+    with SESSIONS_LOCK:
+        sessions_data = []
+        for session_id, session_info in ACTIVE_SESSIONS.items():
+            duration = (datetime.now() - session_info["login_time"]).seconds
+            sessions_data.append({
+                "session_id": session_id,
+                "user": session_info["user"],
+                "pod": session_info["pod"],
+                "login_time": session_info["login_time"].isoformat(),
+                "last_activity": session_info["last_activity"].isoformat(),
+                "duration_seconds": duration,
+            })
+    
+    # HTML Dashboard
+    dashboard_html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Active Users Dashboard</title>
+        <meta http-equiv="refresh" content="5">
+        <style>
+            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial; margin: 0; padding: 20px; background: #f5f7fa; }}
+            h1 {{ color: #2c3e50; }}
+            .summary {{ background: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }}
+            .summary h2 {{ margin: 0 0 10px 0; font-size: 48px; color: #28a745; }}
+            .summary p {{ margin: 0; color: #6c757d; }}
+            table {{ width: 100%; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); border-collapse: collapse; }}
+            th {{ background: #007bff; color: white; padding: 12px; text-align: left; }}
+            td {{ padding: 12px; border-bottom: 1px solid #dee2e6; }}
+            tr:last-child td {{ border-bottom: none; }}
+            tr:hover {{ background: #f8f9fa; }}
+            .pod {{ background: #e7f3ff; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 12px; }}
+            .time {{ color: #6c757d; font-size: 14px; }}
+        </style>
+    </head>
+    <body>
+        <h1>🧑‍💼 Active Users Dashboard</h1>
+        <div class="summary">
+            <h2>{len(sessions_data)}</h2>
+            <p>Active Sessions</p>
+        </div>
+        <table>
+            <tr>
+                <th>User</th>
+                <th>Session ID</th>
+                <th>Pod</th>
+                <th>Login Time</th>
+                <th>Last Activity</th>
+                <th>Duration</th>
+            </tr>
+    """
+    
+    for session_data in sessions_data:
+        duration_min = session_data["duration_seconds"] // 60
+        dashboard_html += f"""
+            <tr>
+                <td><strong>{session_data['user']}</strong></td>
+                <td class="time">{session_data['session_id'][:8]}...</td>
+                <td><span class="pod">{session_data['pod']}</span></td>
+                <td class="time">{session_data['login_time']}</td>
+                <td class="time">{session_data['last_activity']}</td>
+                <td>{duration_min}m</td>
+            </tr>
+        """
+    
+    dashboard_html += """
+        </table>
+        <p style="margin-top: 20px; color: #6c757d; text-align: center;">Auto-refreshes every 5 seconds</p>
+    </body>
+    </html>
+    """
+    
+    return dashboard_html
+
+
+# ============================================================================
+# ENDPOINTS: Metrics for Prometheus
+# ============================================================================
+
+@app.route("/metrics")
+def metrics():
+    """
+    Prometheus metrics endpoint (production pattern).
+    
+    Exposes:
+    - active_sessions_total: Current active sessions
+    - drain_notifications_sent: How many drain warnings sent
+    - graceful_logouts_total: Users who logged out after notification
+    - forced_logouts_total: Sessions force-closed after timeout
+    - total_logins: Lifetime login count
+    """
+    with SESSIONS_LOCK:
+        METRICS["active_sessions_total"] = len(ACTIVE_SESSIONS)
+    
+    with METRICS_LOCK:
+        metrics_text = f"""# HELP active_sessions_total Current number of active user sessions
+# TYPE active_sessions_total gauge
+active_sessions_total {METRICS['active_sessions_total']}
+
+# HELP drain_notifications_sent Total drain notifications sent to users
+# TYPE drain_notifications_sent counter
+drain_notifications_sent {METRICS['drain_notifications_sent']}
+
+# HELP graceful_logouts_total Total graceful logouts after notification
+# TYPE graceful_logouts_total counter
+graceful_logouts_total {METRICS['graceful_logouts_total']}
+
+# HELP forced_logouts_total Total forced logouts after timeout
+# TYPE forced_logouts_total counter
+forced_logouts_total {METRICS['forced_logouts_total']}
+
+# HELP total_logins Total logins since startup
+# TYPE total_logins counter
+total_logins {METRICS['total_logins']}
+"""
+    
+    return Response(metrics_text, mimetype="text/plain")
+
+
+# ============================================================================
 USER_PAGE = """
 <!DOCTYPE html>
 <html>
@@ -135,9 +461,63 @@ USER_PAGE = """
         .metric-value { font-weight: 600; color: #28a745; }
         a { display: inline-block; margin-top: 20px; padding: 14px 32px; background: #007bff; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; transition: all 0.3s; }
         a:hover { background: #0056b3; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,123,255,0.4); }
+        
+        /* Drain notification banner */
+        #drain-banner { display: none; position: fixed; top: 0; left: 0; right: 0; background: #ff6b6b; color: white; padding: 20px; text-align: center; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: slideDown 0.5s; }
+        @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+        #drain-banner h2 { margin: 0 0 10px 0; font-size: 24px; }
+        #drain-banner p { margin: 5px 0; font-size: 18px; }
+        #countdown { font-size: 32px; font-weight: bold; margin: 10px 0; }
+        .logout-btn { display: inline-block; margin-top: 15px; padding: 12px 24px; background: white; color: #ff6b6b; text-decoration: none; border-radius: 8px; font-weight: 600; }
     </style>
+    <script>
+        // Server-Sent Events (SSE) for real-time notifications
+        const eventSource = new EventSource('/events');
+        
+        eventSource.addEventListener('connected', function(e) {
+            console.log('[SSE] Connected to server notifications');
+        });
+        
+        eventSource.addEventListener('drain', function(e) {
+            const data = JSON.parse(e.data);
+            console.log('[SSE] Drain notification received:', data);
+            
+            // Show drain banner
+            const banner = document.getElementById('drain-banner');
+            banner.style.display = 'block';
+            
+            // Start countdown
+            let secondsLeft = data.countdown || 60;
+            const countdownEl = document.getElementById('countdown');
+            
+            const countdownInterval = setInterval(function() {
+                secondsLeft--;
+                countdownEl.textContent = secondsLeft + 's';
+                
+                if (secondsLeft <= 0) {
+                    clearInterval(countdownInterval);
+                    // Auto-logout after countdown
+                    window.location.href = '/logout?reason=drain';
+                }
+            }, 1000);
+        });
+        
+        eventSource.addEventListener('error', function(e) {
+            console.error('[SSE] Connection error:', e);
+            // Will auto-reconnect
+        });
+    </script>
 </head>
 <body>
+    <!-- Drain notification banner (hidden by default) -->
+    <div id="drain-banner">
+        <h2>⚠️ Server Shutting Down</h2>
+        <p>Please save your work and logout gracefully.</p>
+        <div id="countdown">60s</div>
+        <p>Auto-logout in <span id="countdown">60</span> seconds</p>
+        <a href="/logout?reason=drain" class="logout-btn">Logout Now</a>
+    </div>
+    
     <div class="container">
         <h1>🚀 Kubernetes Demo App</h1>
         <div class="badge">Service Available</div>
@@ -494,12 +874,20 @@ def check_maintenance():
     - Single point of control (DRY principle)
     - Runs before any route handler
     - Can return response or None to continue routing
+    
+    Session Tracking Pattern:
+    - Create/update session on every request
+    - Track last activity for timeout detection
+    - Skip for static files and health probes
     """
-    # Skip maintenance check for health probes and admin routes
-    if request.path in ["/health", "/healthz", "/ready", "/readyz"] or request.path.startswith(
-        "/admin"
-    ):
+    # Skip for health probes, admin routes, SSE, metrics, static files
+    skip_paths = ["/health", "/healthz", "/ready", "/readyz", "/events", "/metrics", "/logout"]
+    if request.path in skip_paths or request.path.startswith(("/admin", "/static")):
         return None
+
+    # Track user session (production pattern)
+    session_id = get_or_create_session_id()
+    update_session_activity(session_id)
 
     # Check if we're in graceful shutdown (draining connections)
     if SHUTTING_DOWN:
@@ -518,16 +906,105 @@ def check_maintenance():
 
 @app.route("/")
 def index():
-    """Main page - just returns the normal page. Maintenance handled by before_request."""
+    """
+    Main page - returns the normal page with SSE connection.
+    
+    Maintenance handled by before_request.
+    Session tracking automatic via before_request.
+    """
     return render_template_string(USER_PAGE)
+
+
+@app.route("/logout")
+def logout():
+    """
+    Logout endpoint (production pattern for graceful drain).
+    
+    When user logs out:
+    - Remove session from active sessions
+    - Track if it was graceful (after drain notification) or manual
+    - Clear Flask session
+    """
+    session_id = session.get("session_id")
+    reason = request.args.get("reason", "manual")
+    
+    if session_id:
+        with SESSIONS_LOCK:
+            if session_id in ACTIVE_SESSIONS:
+                del ACTIVE_SESSIONS[session_id]
+        
+        with METRICS_LOCK:
+            if reason == "drain":
+                METRICS["graceful_logouts_total"] += 1
+            METRICS["active_sessions_total"] = len(ACTIVE_SESSIONS)
+    
+    session.clear()
+    
+    logout_html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Logged Out</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial; margin: 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+            .container { max-width: 600px; background: white; padding: 50px; border-radius: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; }
+            h1 { color: #2c3e50; margin: 0 0 20px 0; }
+            p { color: #6c757d; font-size: 18px; margin: 20px 0; }
+            a { display: inline-block; margin-top: 20px; padding: 14px 32px; background: #007bff; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; }
+            .icon { font-size: 64px; margin-bottom: 20px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="icon">👋</div>
+            <h1>Successfully Logged Out</h1>
+            <p>Your session has been ended gracefully.</p>
+            <p>Thank you for saving your work!</p>
+            <a href="/">← Back to Home</a>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return logout_html
 
 
 @app.route("/admin")
 def admin():
-    """Admin panel - always accessible."""
+    """
+    Admin panel - always accessible (production pattern).
+    
+    Shows:
+    - Maintenance mode status
+    - Toggle button (local dev only)
+    - Link to active users dashboard (/admin/users)
+    - Link to metrics (/metrics)
+    """
     maintenance_status = "MAINTENANCE ON" if is_maintenance_mode() else "NORMAL OPERATION"
+    
+    # Get active sessions count
+    with SESSIONS_LOCK:
+        active_count = len(ACTIVE_SESSIONS)
+    
+    # Updated admin page with links
+    admin_page_with_links = ADMIN_PAGE.replace(
+        '<a href="/">← Back to Home</a>',
+        f'''
+        <div style="margin-top: 30px;">
+            <p style="color: #6c757d; font-size: 14px;">Active Sessions: <strong>{active_count}</strong></p>
+            <a href="/admin/users" style="margin: 10px;">📊 View Active Users</a>
+            <a href="/metrics" style="margin: 10px; background: #28a745;">📈 View Metrics</a>
+            <p style="margin-top: 20px;">
+                <a href="/">← Back to Home</a>
+            </p>
+        </div>
+        '''
+    )
+    
     return render_template_string(
-        ADMIN_PAGE, maintenance_status=maintenance_status, maintenance_mode=is_maintenance_mode()
+        admin_page_with_links, 
+        maintenance_status=maintenance_status, 
+        maintenance_mode=is_maintenance_mode()
     )
 
 

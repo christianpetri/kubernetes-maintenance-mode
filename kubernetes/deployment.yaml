@@ -18,6 +18,7 @@ spec:
         app: sample-app
         tier: user
     spec:
+      terminationGracePeriodSeconds: 90  # 60s user drain + 15s endpoint propagation + 15s buffer
       containers:
       - name: app
         image: sample-app:latest
@@ -75,6 +76,7 @@ spec:
         app: sample-app
         tier: admin
     spec:
+      terminationGracePeriodSeconds: 30  # Admin pods don't need long drain (no user sessions)
       containers:
       - name: app
         image: sample-app:latest
