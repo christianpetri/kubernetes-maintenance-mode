@@ -11,10 +11,32 @@ while **guaranteeing admin access remains available**.
 [Design](DESIGN.md) •
 [Quick Start](#quick-start) •
 [Flask Pattern](#flask-best-practice-pattern) •
+[Screenshots](#screenshots) •
 [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+## Screenshots
+
+### Normal Operation
+
+![User Interface - Normal Mode](docs/images/user-normal-mode.png)
+*User-facing interface during normal operation*
+
+### Admin Control Panel
+
+![Admin Panel](docs/images/admin-panel.png)
+*Admin interface with maintenance mode controls (always accessible)*
+
+### Maintenance Mode Active
+
+![Maintenance Mode Enabled](docs/images/maintenance-enabled.png)
+*Admin view showing maintenance mode enabled with pod status*
+
+![User View - 503 Maintenance Page](docs/images/user-503-maintenance.png)
+*Users see 503 maintenance page while admins retain full access*
 
 ## Table of Contents
 
+- [Screenshots](#screenshots)
 - [Key Innovation](#key-innovation-admin-always-accessible)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
