@@ -15,7 +15,7 @@ spec:
     targetPort: 8080
     protocol: TCP
     name: http
-  type: ClusterIP
+  type: NodePort
 ---
 apiVersion: v1
 kind: Service
@@ -34,4 +34,4 @@ spec:
     targetPort: 8080
     protocol: TCP
     name: http
-  type: ClusterIP
+  type: NodePort

@@ -8,23 +8,22 @@ Kubernetes maintenance mode using Flask's `@app.before_request` with 503 respons
 while **guaranteeing admin access remains available**.
 
 **Quick Links:**
-[Architecture](#architecture) •
+[Design](DESIGN.md) •
 [Quick Start](#quick-start) •
 [Flask Pattern](#flask-best-practice-pattern) •
-[Troubleshooting](#troubleshooting)
+[Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ## Table of Contents
 
 - [Key Innovation](#key-innovation-admin-always-accessible)
 - [Features](#features)
 - [Prerequisites](#prerequisites)
-- [Architecture](#architecture)
 - [Quick Start](#quick-start)
 - [Understanding the Architecture](#understanding-the-architecture)
 - [Demo Script](#demo-script)
 - [Project Structure](#project-structure)
 - [Development](#development)
-- [Troubleshooting](#troubleshooting)
+- [Real-World Use Cases](#real-world-use-cases)
 - [Key Takeaways](#key-takeaways)
 - [Further Reading](#further-reading)
 
@@ -72,12 +71,12 @@ def check_maintenance():
 
 This demo teaches practical Kubernetes patterns for production operations:
 
-✅ **Kubernetes Readiness Probes** - How to use health checks to control traffic routing  
-✅ **Service Endpoint Management** - Understanding how Kubernetes routes traffic to healthy pods  
-✅ **Graceful Degradation** - Implementing maintenance mode without pod restarts  
-✅ **Operational Safety** - Preventing admin lockout during maintenance windows  
-✅ **ConfigMap-Based Configuration** - Dynamic application configuration in Kubernetes  
-✅ **Multi-Deployment Architecture** - When to use separate deployments for different roles  
+**Kubernetes Readiness Probes** - How to use health checks to control traffic routing  
+**Service Endpoint Management** - Understanding how Kubernetes routes traffic to healthy pods  
+**Graceful Degradation** - Implementing maintenance mode without pod restarts  
+**Operational Safety** - Preventing admin lockout during maintenance windows  
+**ConfigMap-Based Configuration** - Dynamic application configuration in Kubernetes  
+**Multi-Deployment Architecture** - When to use separate deployments for different roles  
 
 ## Prerequisites
 
@@ -87,6 +86,8 @@ This demo teaches practical Kubernetes patterns for production operations:
 - Python 3.11+ (for local development)
 
 ## Architecture
+
+See [DESIGN.md](DESIGN.md) for detailed architecture and design philosophy.
 
 ```text
 ┌─────────────────────────────────────────────────────────┐
@@ -108,7 +109,7 @@ This demo teaches practical Kubernetes patterns for production operations:
 │  │  (2 replicas)     │         │  (1 replica)     │     │
 │  │                   │         │                  │     │
 │  │ Readiness Logic:  │         │ Readiness Logic: │     │
-│  │ • Returns 503 if  │         │ ✓ ALWAYS 200     │     │
+│  │ • Returns 503 if  │         │ • ALWAYS 200     │     │
 │  │   maintenance=true│         │   (guaranteed    │     │
 │  │ • Removed from    │         │    admin access) │     │
 │  │   Service by K8s  │         │                  │     │
@@ -141,25 +142,25 @@ git clone https://github.com/YourOrg/Demo_503.git
 cd Demo_503
 ```
 
-### 2. Setup the Environment
+### 2. Setup and Access
 
 ```powershell
 .\scripts\runme.ps1 setup
 ```
 
-This will:
+This automated script will:
 
 - Start Minikube cluster (Docker driver, 4 CPUs, 8GB RAM)
 - Build the Flask application Docker image
-- Deploy user, admin, and Redis services to Kubernetes
-- Wait for all pods to be ready
+- Deploy all services to Kubernetes (user, admin, Redis)
+- Open service tunnels in separate windows with access URLs
 
-### 3. Access the Application
+**Access URLs will be displayed in the tunnel windows** (auto-assigned ports like `http://127.0.0.1:xxxxx`)
 
-Open your browser:
+- **User Interface:** Check "USER Service Tunnel" window
+- **Admin Interface:** Check "ADMIN Service Tunnel" window
 
-- **User Interface:** `http://localhost:30080`
-- **Admin Interface:** `http://localhost:30080/admin`
+No manual port-forwarding or hosts file editing required
 
 ### 4. Enable Maintenance Mode
 
@@ -265,8 +266,8 @@ This ensures **administrators can always reach the control panel** to disable ma
 .\scripts\runme.ps1 status
 # Output: Maintenance Mode is OFF, all pods 1/1 Ready
 
-# Access the application
-Start-Process http://localhost:30080  # Shows normal page
+# Access the application (use URL from tunnel window)
+# Example: http://127.0.0.1:52876  # Shows normal page
 ```
 
 **2. Enable maintenance mode:**
@@ -287,15 +288,15 @@ Start-Process http://localhost:30080  # Shows normal page
 
 **4. Verify traffic routing:**
 
-- User endpoint: <http://localhost:30080> - shows 503 maintenance page
-- Admin endpoint: <http://localhost:30080/admin> - STILL ACCESSIBLE
+- User endpoint: Connection refused (pods removed from service)
+- Admin endpoint: STILL ACCESSIBLE via tunnel window URL
 - Admin can disable maintenance from the control panel!
 
 **5. Disable maintenance:**
 
 ```powershell
 .\scripts\runme.ps1 disable
-# Or click the button in admin panel at http://localhost:30080/admin
+# Or click the button in admin panel (use tunnel window URL)
 ```
 
 ## Project Structure
@@ -309,7 +310,7 @@ openshift-maintenance-demo/
 ├── README.md                       # Main documentation
 ├── CONTRIBUTING.md                 # Developer guidelines
 ├── docs/
-│   └── MAINTENANCE_DEMO.md         # Detailed architecture guide
+│   └── TROUBLESHOOTING.md          # Troubleshooting guide
 ├── kubernetes/                     # Kubernetes manifests (Minikube)
 │   ├── namespace.yaml
 │   ├── configmap.yaml
@@ -336,76 +337,72 @@ python app.py
 
 # Test maintenance mode
 $env:MAINTENANCE_MODE="true"
-$env:X_ADMIN_ACCESS="true"  # Simulate admin pod
+$env:ADMIN_ACCESS="true"  # Simulate admin pod
 python app.py
 ```
 
-### Code Quality
+### Code Quality and Linting
 
 ```powershell
-# Install dev tools
-pip install ruff mypy pre-commit
+# Install development dependencies (separate from production)
+pip install -r requirements-dev.txt
 
 # Run linting
 ruff check .
 ruff format .
+
+# Run type checking
+mypy app.py
+
+# All checks (what GitHub Actions runs)
+ruff check . --output-format=github
+ruff format --check .
 mypy app.py
 ```
 
+**Development Dependencies** (`requirements-dev.txt`):
+
+- **ruff** - Fast Python linter and formatter
+- **mypy** - Static type checker
+- **types-Flask** - Type stubs for Flask
+- **types-redis** - Type stubs for Redis
+
+**Production Dependencies** (`requirements.txt`):
+
+- **Flask** - Web framework
+- **gunicorn** - WSGI server
+- **redis** - Redis client (for demo mode)
+
 ## Troubleshooting
 
-### Pods Not Ready After Maintenance Toggle
+See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) for comprehensive troubleshooting guide.
+
+**Common quick fixes:**
 
 ```powershell
-# Check pod status
-kubectl get pods -n sample-app
+# Restart everything
+.\scripts\teardown.ps1 -KeepMinikube -Force
+.\scripts\runme.ps1 setup
 
-# Check pod logs
+# Check status
+.\scripts\runme.ps1 status
+
+# View logs
 kubectl logs -n sample-app deployment/sample-app-user
-kubectl logs -n sample-app deployment/sample-app-admin
-
-# Verify ConfigMap
-kubectl get configmap app-config -n sample-app -o yaml
-```
-
-### Port-Forward Connection Issues
-
-```powershell
-# Kill existing port-forwards
-Get-Process kubectl | Stop-Process
-
-# Restart port-forwards
-kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
-kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
-```
-
-### Minikube Issues
-
-```powershell
-# Check Minikube status
-minikube status
-
-# Restart Minikube
-minikube stop
-minikube start --cpus=4 --memory=8192 --driver=docker
-
-# Rebuild image in Minikube
-minikube docker-env | Invoke-Expression
-docker build -t sample-app:latest .
 ```
 
 ## Real-World Use Cases
 
 This maintenance mode pattern is applicable to many production scenarios:
 
-### 🔧 Planned Maintenance Windows
+### Planned Maintenance Windows
 
 - Database migrations requiring application downtime
 - Infrastructure upgrades (storage, network, security patches)
 - Third-party service integrations causing temporary unavailability
 - Admins need access to monitor progress and disable maintenance early if possible
 
-### 🚀 Deployment Strategies
+### Deployment Strategies
 
 - Blue-green deployments with user-facing traffic paused
 - Canary releases where new versions are tested by admins first
@@ -442,7 +439,11 @@ without being locked out by the maintenance mode itself.
 
 ## Further Reading
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and contribution workflow.
+- [DESIGN.md](DESIGN.md) - Architecture and design philosophy
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Development guidelines
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Troubleshooting guide
+- [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) - Project structure
+- [docs/GITHUB_SETUP.md](docs/GITHUB_SETUP.md) - GitHub configuration
 
 ---
 

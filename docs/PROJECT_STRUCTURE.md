@@ -12,14 +12,14 @@ Demo_503/
 ├── requirements.txt                          # Python dependencies
 ├── pyproject.toml                            # Python project configuration (Ruff linting)
 ├── README.md                                 # Project overview and quick start
-├── ARCHITECTURE.md                           # System architecture documentation
+├── DESIGN.md                                 # System design and architecture
 ├── CONTRIBUTING.md                           # Contribution guidelines
 │
 ├── docs/                                     # Documentation directory
 │   ├── ACTIVE_USER_TRACKING.md              # User session tracking (future feature)
 │   ├── CUSTOM_503_PAGES.md                  # Custom maintenance page implementation
 │   ├── GITHUB_SETUP.md                      # GitHub repository setup guide
-│   ├── MAINTENANCE_DEMO.md                  # Complete maintenance mode demo guide
+│   ├── TROUBLESHOOTING.md                   # Troubleshooting guide
 │   ├── MAINTENANCE_PAGE_QUICK_REF.md        # Quick reference for 503 pages
 │   ├── PRODUCTION_ROUTING.md                # Production routing patterns explained
 │   └── PROJECT_STRUCTURE.md                 # This file!
@@ -74,10 +74,10 @@ Demo_503/
 
 ### Documentation
 
-- **MAINTENANCE_DEMO.md** - Complete walkthrough of the demo
+- **TROUBLESHOOTING.md** - Comprehensive troubleshooting guide
 - **PRODUCTION_ROUTING.md** - Port-forward vs Ingress explained
 - **CUSTOM_503_PAGES.md** - How to serve custom maintenance pages
-- **ARCHITECTURE.md** - System design and patterns
+- **DESIGN.md** - System design and architecture patterns
 - **MAINTENANCE_PAGE_QUICK_REF.md** - Quick reference for 503 pages
 
 ### Scripts
@@ -119,7 +119,7 @@ Scripts: 5 PowerShell automation scripts
 
 ## Production Readiness
 
-### ✅ Production-Ready Features
+### Production-Ready Features
 
 - Flask @app.before_request pattern (industry standard)
 - Kubernetes readiness probes for graceful drain
@@ -157,7 +157,7 @@ kubectl apply -f kubernetes/
 ## Related Documentation
 
 - **README.md** - Project overview, quick start
-- **ARCHITECTURE.md** - System design principles
-- **MAINTENANCE_DEMO.md** - Step-by-step demo guide
+- **DESIGN.md** - System design principles
+- **TROUBLESHOOTING.md** - Problem resolution guide
 - **PRODUCTION_ROUTING.md** - How Ingress routing works
 - **CUSTOM_503_PAGES.md** - Maintenance page patterns

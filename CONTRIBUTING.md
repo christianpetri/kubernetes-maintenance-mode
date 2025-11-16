@@ -44,11 +44,8 @@ minikube docker-env | Invoke-Expression
 docker build -t sample-app:latest .
 
 # Deploy to Minikube
-kubectl apply -f kubernetes/
-
-# Port-forward for testing
-kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
-kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
+.\scripts\runme.ps1 setup
+# Service tunnels open automatically with access URLs
 ```
 
 ## Code Quality Tools
@@ -136,7 +133,7 @@ openshift-maintenance-demo/
 ├── README.md                       # Main documentation
 ├── CONTRIBUTING.md                 # This file
 ├── docs/
-│   └── MAINTENANCE_DEMO.md         # Detailed architecture guide
+│   └── TROUBLESHOOTING.md          # Troubleshooting guide
 ├── kubernetes/                     # Kubernetes manifests (Minikube)
 │   ├── namespace.yaml
 │   ├── configmap.yaml
@@ -157,36 +154,28 @@ openshift-maintenance-demo/
 
 ```powershell
 # Deploy to Minikube
-kubectl apply -f kubernetes/
+.\scripts\runme.ps1 setup
 
-# Wait for pods
-kubectl get pods -n sample-app -w
-
-# Port-forward services
-kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
-kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
+# Wait for service tunnels to open
+# URLs displayed in tunnel windows
 ```
 
 ### Test Maintenance Mode
 
 ```powershell
 # Enable maintenance
-kubectl patch configmap app-config -n sample-app --type=json `
-  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "true"}]'
-kubectl rollout restart deployment -n sample-app
+.\scripts\runme.ps1 enable
 
 # Check pod status
 kubectl get pods -n sample-app
 # Admin should be 1/1 Ready, User should be 0/1 Not Ready
 
-# Test endpoints
-Invoke-WebRequest http://localhost:9090 -UseBasicParsing  # Should return 503
-Invoke-WebRequest http://localhost:9092 -UseBasicParsing  # Should return 200
+# Test endpoints (use tunnel window URLs)
+# User service: Connection refused
+# Admin service: Still accessible
 
 # Disable maintenance
-kubectl patch configmap app-config -n sample-app --type=json `
-  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "false"}]'
-kubectl rollout restart deployment -n sample-app
+.\scripts\runme.ps1 disable
 ```
 
 ### Test Probes Directly

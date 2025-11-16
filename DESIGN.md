@@ -24,7 +24,7 @@
                │    └─> Always 200 OK
                │
                ├──> [2] Readiness Check (/ready)
-               │    ├─> Read: /tmp/maintenance flag
+               │    ├─> Read: Redis (primary) or ConfigMap file (fallback)
                │    ├─> Admin pods: Always 200
                │    └─> User pods: 503 if maintenance=true
                │
@@ -44,15 +44,17 @@
 │                   (Kubernetes Control)                           │
 └─────────────────────────────────────────────────────────────────┘
 
-    ┌─────────────────────┐
-    │   ConfigMap         │
-    │   maintenance=false │
-    └──────────┬──────────┘
-               │ Mounted at: /config/maintenance
-               │
-    ┌──────────┴───────────┬────────────────────┐
-    │                      │                    │
-    ▼                      ▼                    ▼
+    ┌──────────────────────┐     ┌──────────────────────┐
+    │   Redis             │     │   ConfigMap         │
+    │   (Demo sync)       │     │   (Fallback)        │
+    │ maintenance=false   │     │   maintenance=false │
+    └──────────┬──────────┘     └──────────┬──────────┘
+               │                           │
+               │ Network connection        │ Mounted at: /config/maintenance
+               │                           │
+    ┌──────────┴───────────┬───────────────┴───────────┐
+    │                      │                            │
+    ▼                      ▼                            ▼
 ┌─────────┐          ┌─────────┐          ┌─────────┐
 │ User    │          │ User    │          │ Admin   │
 │ Pod 1   │          │ Pod 2   │          │ Pod 1   │
@@ -87,11 +89,12 @@
 OPS ACTION                          DEV RESPONSE                    K8S REACTION
 ─────────────────────────────────────────────────────────────────────────────
 
-1. kubectl patch configmap
-   maintenance=true
+1. Admin button or script          Toggle via Redis (instant)
+   runs: runme.ps1 enable           OR kubectl patch configmap
                                     ↓
-2. File appears at                  App reads /config/maintenance
-   /config/maintenance              └─> is_maintenance_mode() = True
+2. Redis SET maintenance_mode       App reads Redis (primary)
+   OR ConfigMap file update         Fallback: /config/maintenance
+                                    └─> is_maintenance_mode() = True
                                     ↓
 3. Readiness probe                  GET /ready
    hits user pods                   ├─> Admin pods: 200 (always)
@@ -117,12 +120,12 @@ OPS ACTION                          DEV RESPONSE                    K8S REACTION
 
 **Job:** Respond correctly when asked about health  
 
-✅ **Simple contract:**
+**Simple contract:**
 
 1. `/health` → Always return 200 (app is running)
-2. `/ready` → Return 200 or 503 based on config file
+2. `/ready` → Return 200 or 503 based on Redis (primary) or ConfigMap file (fallback)
 3. `@app.before_request` → Return 503 to users if maintenance flag exists
-4. `/admin/*` → Always exempt from maintenance check
+4. `/admin/*` → Always exempt from maintenance check (requires ADMIN_ACCESS=true)
 
 **That's it.** No complex orchestration, no distributed state management.
 
@@ -130,18 +133,19 @@ OPS ACTION                          DEV RESPONSE                    K8S REACTION
 
 **Job:** Control traffic routing based on health checks
 
-✅ **Kubernetes does the heavy lifting:**
+**Kubernetes does the heavy lifting:**
 
-1. Watches readiness probe responses
+1. Watches readiness probe responses every 5 seconds
 2. Adds/removes pods from Service endpoints automatically
-3. ConfigMap provides centralized config distribution
-4. Ingress routes external traffic to healthy endpoints
+3. Redis provides instant state sync (primary method)
+4. ConfigMap provides fallback config distribution
+5. Services route traffic only to Ready pods (endpoints list)
 
 ---
 
 ## What Makes This Clean
 
-### ❌ **NOT Doing (Complexity Removed)**
+### **NOT Doing (Complexity Removed)**
 
 - ~~Session replication~~  
   *Demo doesn't track sessions. Focus is on maintenance mode pattern.*
@@ -149,11 +153,13 @@ OPS ACTION                          DEV RESPONSE                    K8S REACTION
 - ~~SSE for maintenance alerts~~  
   *Removed. Just return 503, let client retry.*
 
-### ✅ **Optional: Redis for Demo Mode**
+### **Redis for Instant State Sync**
 
-- Used for button state sync across pods during live demos
-- Shows instant cross-pod behavior (better presentation)
-- Production still uses ConfigMap (proper Kubernetes pattern)
+- Primary method for maintenance state (instant cross-pod sync)
+- Admin panel button updates Redis directly
+- ConfigMap serves as fallback when Redis unavailable
+- Demo shows real-time drain behavior (pods respond within seconds)
+- Production can use either Redis or ConfigMap-only pattern
 
 - ~~Graceful shutdown SSE~~  
   *Removed. SIGTERM already handled by K8s termination grace period.*
@@ -164,7 +170,7 @@ OPS ACTION                          DEV RESPONSE                    K8S REACTION
 - ~~Active user tracking~~  
   *Optional feature, not core to maintenance demo.*
 
-### ✅ **Clean Demo Focus**
+### **Clean Demo Focus**
 
 ```python
 @app.before_request
@@ -213,34 +219,27 @@ demo/
 
 ## Testing the Flow
 
-### 1. Normal Operation
+### 1. Setup and Access
 
 ```bash
-curl http://localhost:9090/        # → User page (200)
-curl http://localhost:9092/admin   # → Admin page (200)
+.\scripts\runme.ps1 setup
+# Service tunnels open with access URLs in separate windows
 ```
 
 ### 2. Enable Maintenance
 
 ```bash
-kubectl patch configmap sample-app-config -n sample-app \
-  -p '{"data":{"maintenance":"true"}}'
+.\scripts\runme.ps1 enable
+# Or use the admin panel button
 ```
 
 ### 3. Verify Behavior
 
 ```bash
-# Wait 10s for readiness probe cycle
-sleep 10
+# Wait 10-15s for readiness probe cycle
 
-# User endpoint returns 503
-curl -i http://localhost:9090/
-# → HTTP/1.1 503 Service Unavailable
-# → Retry-After: 300
-
-# Admin still works
-curl http://localhost:9092/admin
-# → Admin Dashboard (200)
+# User endpoint: Connection refused (pods removed from service)
+# Admin endpoint: Still accessible via tunnel URL
 ```
 
 ### 4. Check Kubernetes

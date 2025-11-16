@@ -7,8 +7,8 @@
 #>
 
 param(
-    [string]$UserServiceUrl = "http://localhost:9090",
-    [string]$AdminServiceUrl = "http://localhost:9092"
+    [string]$UserServiceUrl = "http://localhost:52876",
+    [string]$AdminServiceUrl = "http://localhost:52875"
 )
 
 Write-Host "`n========================================" -ForegroundColor Green
@@ -35,13 +35,13 @@ function Test-Endpoint {
             Write-Host "  Response: $($response | ConvertTo-Json -Compress)" -ForegroundColor Yellow
             
             if ($ExpectedPattern -and ($response | ConvertTo-Json) -match $ExpectedPattern) {
-                Write-Host "  ✓ PASS: Found pattern '$ExpectedPattern'" -ForegroundColor Green
+                Write-Host "  [PASS]: Found pattern '$ExpectedPattern'" -ForegroundColor Green
                 return $true
             } elseif (!$ExpectedPattern) {
-                Write-Host "  ✓ PASS: Got valid JSON response" -ForegroundColor Green
+                Write-Host "  [PASS]: Got valid JSON response" -ForegroundColor Green
                 return $true
             } else {
-                Write-Host "  ✗ FAIL: Pattern '$ExpectedPattern' not found" -ForegroundColor Red
+                Write-Host "  [FAIL]: Pattern '$ExpectedPattern' not found" -ForegroundColor Red
                 return $false
             }
         } else {
@@ -49,18 +49,18 @@ function Test-Endpoint {
             $content = $response.Content
             
             if ($ExpectedPattern -and $content -match $ExpectedPattern) {
-                Write-Host "  ✓ PASS: Found pattern '$ExpectedPattern'" -ForegroundColor Green
+                Write-Host "  [PASS]: Found pattern '$ExpectedPattern'" -ForegroundColor Green
                 return $true
             } elseif (!$ExpectedPattern) {
-                Write-Host "  ✓ PASS: Got response (Status: $($response.StatusCode))" -ForegroundColor Green
+                Write-Host "  [PASS]: Got response (Status: $($response.StatusCode))" -ForegroundColor Green
                 return $true
             } else {
-                Write-Host "  ✗ FAIL: Pattern '$ExpectedPattern' not found" -ForegroundColor Red
+                Write-Host "  [FAIL]: Pattern '$ExpectedPattern' not found" -ForegroundColor Red
                 return $false
             }
         }
     } catch {
-        Write-Host "  ✗ FAIL: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  [FAIL]: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
@@ -90,14 +90,14 @@ try {
     $hasCountdown = $response.Content -match "countdown"
     
     if ($hasSSE -and $hasDrainBanner -and $hasCountdown) {
-        Write-Host "  ✓ PASS: SSE, drain banner, and countdown found" -ForegroundColor Green
+        Write-Host "  [PASS]: SSE, drain banner, and countdown found" -ForegroundColor Green
         $testsPassed++
     } else {
-        Write-Host "  ✗ FAIL: Missing features (SSE:$hasSSE, Banner:$hasDrainBanner, Countdown:$hasCountdown)" -ForegroundColor Red
+        Write-Host "  [FAIL]: Missing features (SSE:$hasSSE, Banner:$hasDrainBanner, Countdown:$hasCountdown)" -ForegroundColor Red
         $testsFailed++
     }
 } catch {
-    Write-Host "  ✗ FAIL: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  [FAIL]: $($_.Exception.Message)" -ForegroundColor Red
     $testsFailed++
 }
 Write-Host ""
@@ -110,14 +110,14 @@ try {
     $cookies = $session.Cookies.GetCookies($UserServiceUrl)
     
     if ($cookies.Count -gt 0) {
-        Write-Host "  ✓ PASS: Session cookie created ($($cookies[0].Name))" -ForegroundColor Green
+        Write-Host "  [PASS]: Session cookie created ($($cookies[0].Name))" -ForegroundColor Green
         $testsPassed++
     } else {
-        Write-Host "  ✗ FAIL: No session cookie created" -ForegroundColor Red
+        Write-Host "  [FAIL]: No session cookie created" -ForegroundColor Red
         $testsFailed++
     }
 } catch {
-    Write-Host "  ✗ FAIL: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  [FAIL]: $($_.Exception.Message)" -ForegroundColor Red
     $testsFailed++
 }
 Write-Host ""
@@ -139,14 +139,14 @@ try {
     $hasTable = $response.Content -match "<table"
     
     if ($hasTitle -and $hasSessions -and $hasTable) {
-        Write-Host "  ✓ PASS: Dashboard with session tracking found" -ForegroundColor Green
+        Write-Host "  [PASS]: Dashboard with session tracking found" -ForegroundColor Green
         $testsPassed++
     } else {
-        Write-Host "  ✗ FAIL: Missing dashboard elements" -ForegroundColor Red
+        Write-Host "  [FAIL]: Missing dashboard elements" -ForegroundColor Red
         $testsFailed++
     }
 } catch {
-    Write-Host "  ✗ FAIL: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "  [FAIL]: $($_.Exception.Message)" -ForegroundColor Red
     $testsFailed++
 }
 Write-Host ""
@@ -177,9 +177,9 @@ Write-Host "  Failed: $testsFailed" -ForegroundColor $(if ($testsFailed -gt 0) {
 Write-Host "========================================`n" -ForegroundColor Green
 
 if ($testsFailed -eq 0) {
-    Write-Host "✓ ALL TESTS PASSED!" -ForegroundColor Green
+    Write-Host "[PASS] ALL TESTS PASSED!" -ForegroundColor Green
     exit 0
 } else {
-    Write-Host "✗ SOME TESTS FAILED" -ForegroundColor Red
+    Write-Host "[FAIL] SOME TESTS FAILED" -ForegroundColor Red
     exit 1
 }

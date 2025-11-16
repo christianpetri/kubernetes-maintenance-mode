@@ -15,15 +15,15 @@ with guaranteed admin access during maintenance windows.
 
 - **Code Style**: Follow Flask best practices, use Ruff for linting
 - **Testing**: Test with Minikube, verify both user and admin pod behaviors
-- **Documentation**: Keep README concise, update MAINTENANCE_DEMO.md for details
+- **Documentation**: Keep README concise, update DESIGN.md for architecture details
 - **Pre-commit Hooks**: Run `pre-commit install` to enable automatic checks before commits
 
 ## Current State
 
-✅ Complete production-ready implementation
-✅ Refactored to Flask best practice pattern
-✅ All documentation updated
-✅ Docker and Kubernetes manifests ready
+Complete production-ready implementation
+Refactored to Flask best practice pattern
+All documentation updated
+Docker and Kubernetes manifests ready
 
 ## Communication Style
 

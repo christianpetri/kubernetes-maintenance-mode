@@ -53,13 +53,19 @@ except Exception as e:
 
 
 def is_maintenance_mode() -> bool:
-    """
-    Check if maintenance mode is enabled.
+    """Check if maintenance mode is enabled.
+    
+    Checks multiple sources in priority order for maintenance state.
+    This supports both demo and production deployment patterns.
     
     Priority order:
-    1. Redis shared state (demo mode - cross-pod sync)
+    1. Redis shared state (demo mode - cross-pod synchronization)
     2. Local file flag (single pod testing)
-    3. ConfigMap file (production pattern)
+    3. ConfigMap file (production Kubernetes pattern)
+    
+    Returns:
+        Boolean indicating whether maintenance mode is currently enabled.
+        Returns False if no maintenance indicator is found.
     """
     # Demo mode: Check Redis for shared state (instant cross-pod sync)
     if redis_client:
@@ -81,13 +87,19 @@ def is_maintenance_mode() -> bool:
 
 @app.before_request
 def check_maintenance():
-    """
-    Flask Best Practice: @app.before_request decorator
-
-    Intercepts ALL requests before routing.
-    - Health/readiness checks: pass through
-    - Admin routes: only accessible from admin pods
-    - User routes: return 503 if maintenance mode
+    """Intercept all requests before routing to check maintenance status.
+    
+    This implements the Flask best practice pattern using the
+    @app.before_request decorator for centralized request filtering.
+    
+    Request handling rules:
+    - Health and readiness checks pass through unconditionally
+    - Admin routes require admin pod authentication
+    - User routes return 503 during maintenance mode
+    
+    Returns:
+        None to allow request processing, or Flask response tuple
+        with (content, status_code, headers) to block the request.
     """
     # Allow health checks
     if request.path in ["/health", "/healthz", "/ready", "/readyz"]:
@@ -131,13 +143,27 @@ def check_maintenance():
 
 @app.route("/")
 def index():
-    """User landing page."""
+    """Render the user-facing landing page.
+    
+    Returns:
+        Rendered HTML template showing application status and
+        demonstration instructions.
+    """
     return render_template_string(INDEX_TEMPLATE, pod_name=POD_NAME)
 
 
 @app.route("/admin")
 def admin():
-    """Admin control panel - always accessible."""
+    """Render the administrative control panel.
+    
+    This endpoint is always accessible from admin pods, even during
+    maintenance mode. Provides interface for toggling maintenance state
+    and viewing Kubernetes integration commands.
+    
+    Returns:
+        Rendered HTML template showing maintenance controls and
+        production deployment instructions.
+    """
     maintenance = is_maintenance_mode()
     return render_template_string(
         ADMIN_TEMPLATE, pod_name=POD_NAME, maintenance=maintenance, is_admin=IS_ADMIN_POD
@@ -146,55 +172,62 @@ def admin():
 
 @app.route("/admin/toggle", methods=["POST"])
 def toggle_maintenance():
-    """
-    Toggle maintenance mode.
-
-    DEMO MODE (With Redis):
-      - Toggles shared state in Redis
-      - ALL PODS see the change instantly
-      - Perfect for live demonstrations
-      - Shows real-time drain behavior
-
-    DEMO MODE (Without Redis):
-      - Toggles file flag on THIS POD ONLY
-      - Works for single-pod testing
-      - Each pod has separate filesystem (no sync)
-
-    PRODUCTION (Kubernetes):
-      - DO NOT use this button!
-      - Use kubectl to update ConfigMap (single source of truth)
-      - Restart pods to pick up new environment/volume
-      - Example:
-        kubectl patch configmap sample-app-config -n sample-app \\
+    """Toggle maintenance mode state via Redis.
+    
+    This endpoint is designed for demonstration purposes to show
+    the maintenance mode workflow. Production deployments should use
+    Kubernetes ConfigMaps with kubectl commands.
+    
+    Demo Mode Behavior:
+        With Redis: Toggles shared state visible to all pods instantly.
+                   Demonstrates real-time pod draining behavior.
+        Without Redis: Returns error - Redis required for toggle.
+    
+    Production Integration:
+        Instead of this endpoint, production systems should:
+        1. Update ConfigMap via kubectl or CI/CD pipeline
+        2. Restart deployments to apply configuration changes
+        3. Use approval workflows and audit logging
+    
+    Example production commands:
+        kubectl patch configmap sample-app-config -n sample-app
           -p '{"data":{"maintenance":"true"}}'
         kubectl rollout restart deployment/sample-app-user -n sample-app
-
-    This button demonstrates the UI pattern, but in production you'd
-    integrate with your CI/CD pipeline or admin tool that calls kubectl.
+    
+    Returns:
+        JSON response with success status and mode information.
+        HTTP 200 on success, HTTP 500 if Redis unavailable.
+    
+    Raises:
+        Returns error response if Redis connection fails or is unavailable.
     """
     try:
         current = is_maintenance_mode()
         new_state = "false" if current else "true"
         
-        # Demo mode: Use Redis for shared state (syncs across pods)
+        # Use Redis for shared state (syncs across pods)
         if redis_client:
-            redis_client.set("maintenance_mode", new_state)
-            return {
-                "success": True,
-                "maintenance": not current,
-                "mode": "redis",
-                "note": "Redis state updated - all pods will sync instantly!",
-            }
+            try:
+                redis_client.set("maintenance_mode", new_state)
+                return {
+                    "success": True,
+                    "maintenance": not current,
+                    "mode": "redis",
+                    "note": "Redis state updated - all pods will sync instantly!",
+                }
+            except Exception as redis_error:
+                return {
+                    "success": False,
+                    "error": f"Redis connection failed: {redis_error}",
+                    "note": "Redis is required for maintenance mode toggle in Kubernetes"
+                }, 500
         
-        # Fallback: Local file (single pod only)
-        MAINTENANCE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        MAINTENANCE_FILE.write_text(new_state)
+        # No Redis available
         return {
-            "success": True,
-            "maintenance": not current,
-            "mode": "file",
-            "note": "Local file updated - affects this pod only.",
-        }
+            "success": False,
+            "error": "Redis not available",
+            "note": "Redis is required for maintenance mode toggle in Kubernetes"
+        }, 500
     except Exception as e:
         return {"success": False, "error": str(e)}, 500
 
@@ -207,9 +240,14 @@ def toggle_maintenance():
 @app.route("/health")
 @app.route("/healthz")
 def health():
-    """
-    Liveness Probe: Is the app running?
-    Always returns 200 unless app is completely broken.
+    """Kubernetes liveness probe endpoint.
+    
+    Indicates whether the application process is running correctly.
+    Always returns 200 unless the application is completely non-functional.
+    Kubernetes will restart the pod if this check fails repeatedly.
+    
+    Returns:
+        Dictionary with status and pod identification, HTTP 200.
     """
     return {"status": "healthy", "pod": POD_NAME}
 
@@ -217,13 +255,19 @@ def health():
 @app.route("/ready")
 @app.route("/readyz")
 def ready():
-    """
-    Readiness Probe: Should this pod receive traffic?
-
-    - Admin pods: Always return 200 (ADMIN_ACCESS=true)
-    - User pods: Return 503 if maintenance mode
-
-    Kubernetes uses this to add/remove pods from Service endpoints.
+    """Kubernetes readiness probe endpoint.
+    
+    Indicates whether the pod should receive traffic from the Service.
+    Kubernetes uses this to dynamically add or remove pods from the
+    Service endpoint list without restarting pods.
+    
+    Behavior:
+    - Admin pods: Always return 200 (guaranteed access)
+    - User pods: Return 503 during maintenance mode
+    
+    Returns:
+        Dictionary with readiness status and pod identification.
+        HTTP 200 when ready, HTTP 503 when not ready.
     """
     if IS_ADMIN_POD:
         # Admin pods always ready
@@ -339,17 +383,17 @@ INDEX_TEMPLATE = """
 </head>
 <body>
     <div class="maintenance-banner" id="maintenanceBanner">
-        <h2>⚠️ Maintenance Mode Starting</h2>
+        <h2>Maintenance Mode Starting</h2>
         <p>Please save your work. You will be logged out in:</p>
         <div class="countdown" id="countdown">30</div>
         <p><small>Redirecting to maintenance page...</small></p>
     </div>
     <div class="card">
-        <h1>🚀 Kubernetes Maintenance Mode Demo</h1>
+        <h1>Kubernetes Maintenance Mode Demo</h1>
 
         <div class="pod-info">
             <strong>Pod:</strong> {{ pod_name }}<br>
-            <strong>Status:</strong> <span class="status">✓ Operational</span>
+            <strong>Status:</strong> <span class="status">Operational</span>
         </div>
 
         <h2>What This Demonstrates</h2>
@@ -377,7 +421,7 @@ kubectl patch configmap sample-app-config -n sample-app \\
 # Restart to apply (automatic in production with volume mounts)
 kubectl rollout restart deployment/sample-app-user -n sample-app</pre>
 
-        <p>Then watch this page return 503 while admin stays accessible! ✨</p>
+        <p>Then watch this page return 503 while admin stays accessible!</p>
     </div>
 
     <script>
@@ -520,25 +564,25 @@ ADMIN_TEMPLATE = """
 </head>
 <body>
     <div class="card">
-        <h1>🔧 Admin Control Panel</h1>
+        <h1>Admin Control Panel</h1>
 
         <div class="pod-info">
             <strong>Pod:</strong> {{ pod_name }}<br>
             <strong>Type:</strong> <span class="admin-badge">ADMIN POD</span><br>
-            <strong>Always Accessible:</strong> ✓ Yes
+            <strong>Always Accessible:</strong> Yes
         </div>
 
         <div class="status-box">
             <h2>Maintenance Mode Status</h2>
             {% if maintenance %}
-                <p class="status-on">🔴 ENABLED - User pods returning 503</p>
+                <p class="status-on">ENABLED - User pods returning 503</p>
             {% else %}
-                <p class="status-off">🟢 DISABLED - All pods operational</p>
+                <p class="status-off">DISABLED - All pods operational</p>
             {% endif %}
         </div>
 
         <div class="warning">
-            <strong>💡 Demo vs Production</strong><br>
+            <strong>Demo vs Production</strong><br>
             <strong>DEMO MODE (with Redis):</strong> Button syncs across ALL pods instantly (best for live demos)<br>
             <strong>DEMO MODE (without Redis):</strong> Button affects THIS pod only<br>
             <strong>PRODUCTION:</strong> Use kubectl to update ConfigMap (proper Kubernetes pattern)
@@ -574,7 +618,7 @@ kubectl get endpoints -n sample-app sample-app-admin
 # Check readiness probe status
 kubectl get pods -n sample-app -o wide</pre>
 
-        <h3>🎯 Production Integration</h3>
+        <h3>Production Integration</h3>
         <p style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
             <strong>In real production systems:</strong><br>
             • Integrate kubectl commands into CI/CD pipeline (Jenkins, GitLab CI, etc.)<br>
@@ -670,7 +714,7 @@ MAINTENANCE_TEMPLATE = """
 </head>
 <body>
     <div class="card">
-        <div class="icon">🔧</div>
+        <div class="icon">Service Under Maintenance</div>
         <h1>Service Temporarily Unavailable</h1>
         <p>We're performing scheduled maintenance to improve your experience.</p>
         <p>This page will automatically refresh in 5 minutes.</p>

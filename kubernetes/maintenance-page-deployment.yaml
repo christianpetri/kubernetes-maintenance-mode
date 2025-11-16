@@ -65,7 +65,7 @@ data:
     </head>
     <body>
         <div class="card">
-            <div class="icon">🔧</div>
+            <div class="icon">Service Under Maintenance</div>
             <h1>Service Temporarily Unavailable</h1>
             <p>We're performing scheduled maintenance to improve your experience.</p>
             <p>This page will automatically refresh in 5 minutes.</p>
