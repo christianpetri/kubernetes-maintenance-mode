@@ -1,6 +1,6 @@
 # Maintenance Mode Demo - Kubernetes Edition
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.28+-blue.svg)](https://kubernetes.io/)
 [![Flask](https://img.shields.io/badge/Flask-3.0+-green.svg)](https://flask.palletsprojects.com/)
 
@@ -455,4 +455,4 @@ Feel free to submit issues and enhancement requests!
 
 ## License
 
-This is a demonstration project for educational purposes.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
