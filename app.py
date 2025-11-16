@@ -86,19 +86,35 @@ def admin():
 @app.route("/admin/toggle", methods=["POST"])
 def toggle_maintenance():
     """
-    Toggle maintenance mode (local development only).
+    Toggle maintenance mode.
 
-    WARNING: This doesn't work in Kubernetes!
-    Each pod has its own filesystem. Use kubectl patch instead:
+    DEMO MODE (Local Development):
+      - Toggles file flag on THIS POD ONLY
+      - Works for single-pod demos and testing
+      - Each pod has separate filesystem (no sync)
+      - Useful for showing the UI/UX flow
 
-    kubectl patch configmap sample-app-config -n sample-app \
-      -p '{"data":{"maintenance":"true"}}'
+    PRODUCTION (Kubernetes):
+      - DO NOT use this button!
+      - Use kubectl to update ConfigMap (single source of truth)
+      - Restart pods to pick up new environment/volume
+      - Example:
+        kubectl patch configmap sample-app-config -n sample-app \\
+          -p '{"data":{"maintenance":"true"}}'
+        kubectl rollout restart deployment/sample-app-user -n sample-app
+
+    This button demonstrates the UI pattern, but in production you'd
+    integrate with your CI/CD pipeline or admin tool that calls kubectl.
     """
     try:
         current = is_maintenance_mode()
         MAINTENANCE_FILE.parent.mkdir(parents=True, exist_ok=True)
         MAINTENANCE_FILE.write_text("false" if current else "true")
-        return {"success": True, "maintenance": not current}
+        return {
+            "success": True,
+            "maintenance": not current,
+            "note": "Demo mode - affects this pod only. Production: use kubectl.",
+        }
     except Exception as e:
         return {"success": False, "error": str(e)}, 500
 
@@ -222,11 +238,21 @@ INDEX_TEMPLATE = """
         </ul>
 
         <h2>Try It</h2>
-        <p><a href="/admin">→ Open Admin Panel</a> (always accessible)</p>
+        <p><a href="/admin">→ Open Admin Panel</a> to toggle maintenance mode</p>
 
-        <h3>Enable Maintenance Mode</h3>
-        <pre style="background: #2d3748; color: #48bb78; padding: 15px; border-radius: 8px; overflow-x: auto;">kubectl patch configmap sample-app-config -n sample-app \\
-  -p '{"data":{"maintenance":"true"}}'</pre>
+        <h3>Demo Mode (Quick Test)</h3>
+        <p style="background: #fffaf0; padding: 12px; border-radius: 6px; border-left: 4px solid #ed8936;">
+            Click the button in admin panel to see the UI flow.<br>
+            <small><em>Note: Affects this pod only (for demonstration purposes)</em></small>
+        </p>
+
+        <h3>Production Mode (Kubernetes)</h3>
+        <pre style="background: #2d3748; color: #48bb78; padding: 15px; border-radius: 8px; overflow-x: auto;"># Update ConfigMap (affects all pods)
+kubectl patch configmap sample-app-config -n sample-app \\
+  -p '{"data":{"maintenance":"true"}}'
+
+# Restart to apply (automatic in production with volume mounts)
+kubectl rollout restart deployment/sample-app-user -n sample-app</pre>
 
         <p>Then watch this page return 503 while admin stays accessible! ✨</p>
     </div>
@@ -350,29 +376,50 @@ ADMIN_TEMPLATE = """
         </div>
 
         <div class="warning">
-            <strong>⚠️ Local Toggle Limitation</strong><br>
-            The button below only works in local development.
-            In Kubernetes, each pod has its own filesystem!
+            <strong>💡 Demo vs Production</strong><br>
+            <strong>DEMO MODE:</strong> Button toggles file on THIS pod only (for UI demonstration)<br>
+            <strong>PRODUCTION:</strong> Use kubectl to update ConfigMap (affects all pods)
         </div>
 
         <button onclick="toggleMaintenance()" id="toggleBtn">
-            {% if maintenance %}Disable{% else %}Enable{% endif %} Maintenance (Local Only)
+            {% if maintenance %}Disable{% else %}Enable{% endif %} Maintenance (Demo)
         </button>
+        <p style="font-size: 14px; color: #718096; margin-top: 10px;">
+            ↑ Click to see the UI flow (demo mode - this pod only)
+        </p>
 
         <h2>Production Usage (Kubernetes)</h2>
-        <p>Use kubectl to patch the ConfigMap:</p>
+        <p><strong>Step 1:</strong> Update ConfigMap (single source of truth)</p>
 
         <h3>Enable Maintenance</h3>
         <pre>kubectl patch configmap sample-app-config -n sample-app \\
   -p '{"data":{"maintenance":"true"}}'</pre>
 
+        <p><strong>Step 2:</strong> Restart deployments to pick up new config</p>
+        <pre>kubectl rollout restart deployment/sample-app-user -n sample-app</pre>
+
         <h3>Disable Maintenance</h3>
         <pre>kubectl patch configmap sample-app-config -n sample-app \\
-  -p '{"data":{"maintenance":"false"}}'</pre>
+  -p '{"data":{"maintenance":"false"}}'
+kubectl rollout restart deployment/sample-app-user -n sample-app</pre>
 
-        <h3>Verify Pod Endpoints</h3>
-        <pre>kubectl get endpoints -n sample-app sample-app-user
-kubectl get endpoints -n sample-app sample-app-admin</pre>
+        <h3>Verify Status</h3>
+        <pre># Check which pods are ready (in service)
+kubectl get endpoints -n sample-app sample-app-user
+kubectl get endpoints -n sample-app sample-app-admin
+
+# Check readiness probe status
+kubectl get pods -n sample-app -o wide</pre>
+
+        <h3>🎯 Production Integration</h3>
+        <p style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
+            <strong>In real production systems:</strong><br>
+            • Integrate kubectl commands into CI/CD pipeline (Jenkins, GitLab CI, etc.)<br>
+            • Use Kubernetes operators or custom controllers<br>
+            • Build admin dashboard that calls kubectl API<br>
+            • Add approval workflows and audit logging<br>
+            • Monitor active sessions before enabling maintenance
+        </p>
 
         <p style="margin-top: 30px;">
             <a href="/">← Back to User View</a>
