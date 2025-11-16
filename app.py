@@ -76,119 +76,119 @@ MAINTENANCE_PAGE = """
     <title>We'll Be Right Back - Maintenance in Progress</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif; 
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-            min-height: 100vh; 
-            display: flex; 
-            align-items: center; 
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
             justify-content: center;
             padding: 20px;
         }
-        .container { 
-            max-width: 600px; 
-            background: white; 
-            padding: 60px 40px; 
-            border-radius: 24px; 
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3); 
-            text-align: center; 
+        .container {
+            max-width: 600px;
+            background: white;
+            padding: 60px 40px;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            text-align: center;
         }
         .icon { font-size: 72px; margin-bottom: 20px; animation: pulse 2s ease-in-out infinite; }
         @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
-        h1 { 
-            color: #2c3e50; 
-            font-size: 32px; 
-            margin-bottom: 16px; 
-            font-weight: 700; 
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 16px;
+            font-weight: 700;
         }
-        .subtitle { 
-            color: #6c757d; 
-            font-size: 18px; 
-            margin-bottom: 30px; 
+        .subtitle {
+            color: #6c757d;
+            font-size: 18px;
+            margin-bottom: 30px;
             line-height: 1.6;
         }
-        .eta-box { 
-            background: #f8f9fa; 
-            padding: 24px; 
-            border-radius: 12px; 
-            margin: 30px 0; 
-            border-left: 4px solid #667eea; 
+        .eta-box {
+            background: #f8f9fa;
+            padding: 24px;
+            border-radius: 12px;
+            margin: 30px 0;
+            border-left: 4px solid #667eea;
         }
-        .eta-label { 
-            font-size: 12px; 
-            color: #6c757d; 
-            text-transform: uppercase; 
-            letter-spacing: 1.5px; 
-            margin-bottom: 8px; 
+        .eta-label {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 8px;
             font-weight: 600;
         }
-        .eta-value { 
-            font-size: 24px; 
-            color: #667eea; 
-            font-weight: 700; 
+        .eta-value {
+            font-size: 24px;
+            color: #667eea;
+            font-weight: 700;
         }
-        .status-info { 
-            background: #fff3cd; 
-            border: 2px solid #ffc107; 
-            padding: 20px; 
-            border-radius: 12px; 
-            margin: 24px 0; 
+        .status-info {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 24px 0;
         }
-        .status-info h3 { 
-            color: #856404; 
-            font-size: 14px; 
-            margin-bottom: 12px; 
-            display: flex; 
-            align-items: center; 
-            justify-content: center; 
-            gap: 8px; 
+        .status-info h3 {
+            color: #856404;
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
         .status-info h3::before { content: '⚠️'; }
-        .status-code { 
-            font-family: 'Courier New', monospace; 
-            background: rgba(0,0,0,0.05); 
-            padding: 8px 16px; 
-            border-radius: 6px; 
-            display: inline-block; 
-            color: #856404; 
-            font-size: 14px; 
+        .status-code {
+            font-family: 'Courier New', monospace;
+            background: rgba(0,0,0,0.05);
+            padding: 8px 16px;
+            border-radius: 6px;
+            display: inline-block;
+            color: #856404;
+            font-size: 14px;
             font-weight: 600;
         }
-        .info-grid { 
-            background: #f8f9fa; 
-            padding: 20px; 
-            border-radius: 12px; 
-            margin: 24px 0; 
-            text-align: left; 
+        .info-grid {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 24px 0;
+            text-align: left;
         }
-        .info-grid h3 { 
-            font-size: 12px; 
-            color: #6c757d; 
-            text-transform: uppercase; 
-            letter-spacing: 1px; 
-            margin-bottom: 12px; 
-            text-align: center; 
+        .info-grid h3 {
+            font-size: 12px;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            text-align: center;
         }
-        .info-item { 
-            display: flex; 
-            justify-content: space-between; 
-            padding: 8px 0; 
-            border-bottom: 1px solid #dee2e6; 
-            font-size: 14px; 
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #dee2e6;
+            font-size: 14px;
         }
         .info-item:last-child { border-bottom: none; }
         .info-label { color: #6c757d; }
         .info-value { font-weight: 600; color: #dc3545; }
         .info-value.ok { color: #28a745; }
-        .contact { 
-            margin-top: 30px; 
-            color: #6c757d; 
-            font-size: 14px; 
+        .contact {
+            margin-top: 30px;
+            color: #6c757d;
+            font-size: 14px;
         }
-        .contact a { 
-            color: #667eea; 
-            text-decoration: none; 
-            font-weight: 600; 
+        .contact a {
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 600;
         }
         .contact a:hover { text-decoration: underline; }
         @media (max-width: 600px) {
@@ -203,20 +203,20 @@ MAINTENANCE_PAGE = """
         <div class="icon">🔧</div>
         <h1>We'll Be Right Back</h1>
         <p class="subtitle">
-            Our site is currently undergoing scheduled maintenance to improve your experience. 
+            Our site is currently undergoing scheduled maintenance to improve your experience.
             We appreciate your patience!
         </p>
-        
+
         <div class="eta-box">
             <div class="eta-label">Estimated Return Time</div>
             <div class="eta-value">~30 minutes</div>
         </div>
-        
+
         <div class="status-info">
             <h3>HTTP 503 - Service Temporarily Unavailable</h3>
             <span class="status-code">Retry-After: 1800 seconds</span>
         </div>
-        
+
         <div class="info-grid">
             <h3>Kubernetes Status</h3>
             <div class="info-item">
@@ -232,7 +232,7 @@ MAINTENANCE_PAGE = """
                 <span class="info-value">REMOVED FROM LB</span>
             </div>
         </div>
-        
+
         <div class="contact">
             <p>Need immediate assistance?</p>
             <p>Contact: <a href="/admin">Admin Panel</a></p>
@@ -324,9 +324,11 @@ def check_maintenance():
     This is the Flask standard pattern for maintenance mode.
     """
     # Skip maintenance check for health probes and admin routes
-    if request.path in ['/health', '/healthz', '/ready', '/readyz'] or request.path.startswith('/admin'):
+    if request.path in ["/health", "/healthz", "/ready", "/readyz"] or request.path.startswith(
+        "/admin"
+    ):
         return None
-    
+
     # Show maintenance page for all other routes
     if is_maintenance_mode():
         response = app.make_response(render_template_string(MAINTENANCE_PAGE))
@@ -384,7 +386,7 @@ def ready():
     # Admin pods always ready (for maintenance control access)
     if is_admin_access():
         return {"status": "ready", "pod_type": "admin"}, 200
-    
+
     # User pods: not ready during maintenance (removes from LB)
     if is_maintenance_mode():
         return {"status": "not_ready", "maintenance_mode": True}, 503
