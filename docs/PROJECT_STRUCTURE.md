@@ -1,11 +1,11 @@
 # Project File Structure
 
-Complete directory tree of the Demo_503 Kubernetes Maintenance Mode Demo project.
+Complete directory tree of the Kubernetes Maintenance Mode project.
 
 Generated: 2025-11-16 16:20:09
 
 ```text
-Demo_503/
+kubernetes-maintenance-mode/
 ├── app.py                                    # Main Flask application (676 lines)
 ├── app_complex_backup.py                     # Previous complex version (backup)
 ├── Dockerfile                                # Container image definition

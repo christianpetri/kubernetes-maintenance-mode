@@ -138,8 +138,8 @@ See [DESIGN.md](DESIGN.md) for detailed architecture and design philosophy.
 ### 1. Clone the Repository
 
 ```powershell
-git clone https://github.com/YourOrg/Demo_503.git
-cd Demo_503
+git clone https://github.com/christianpetri/kubernetes-maintenance-mode.git
+cd kubernetes-maintenance-mode
 ```
 
 ### 2. Setup and Access
@@ -302,7 +302,7 @@ This ensures **administrators can always reach the control panel** to disable ma
 ## Project Structure
 
 ```text
-openshift-maintenance-demo/
+kubernetes-maintenance-mode/
 ├── app.py                          # Flask application with dual readiness logic
 ├── requirements.txt                # Python dependencies
 ├── pyproject.toml                  # Python project config + linting

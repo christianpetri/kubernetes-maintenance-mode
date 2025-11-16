@@ -45,9 +45,9 @@ Upload at: Settings → Social Preview
 ### Badges to Consider Adding
 
 ```markdown
-[![Stars](https://img.shields.io/github/stars/YourOrg/Demo_503?style=social)](https://github.com/YourOrg/Demo_503)
-[![Forks](https://img.shields.io/github/forks/YourOrg/Demo_503?style=social)](https://github.com/YourOrg/Demo_503/fork)
-[![Contributors](https://img.shields.io/github/contributors/YourOrg/Demo_503)](https://github.com/YourOrg/Demo_503/graphs/contributors)
+[![Stars](https://img.shields.io/github/stars/christianpetri/kubernetes-maintenance-mode?style=social)](https://github.com/christianpetri/kubernetes-maintenance-mode)
+[![Forks](https://img.shields.io/github/forks/christianpetri/kubernetes-maintenance-mode?style=social)](https://github.com/christianpetri/kubernetes-maintenance-mode/fork)
+[![Contributors](https://img.shields.io/github/contributors/christianpetri/kubernetes-maintenance-mode)](https://github.com/christianpetri/kubernetes-maintenance-mode/graphs/contributors)
 ```
 
 ### Quick Links Section
@@ -100,7 +100,7 @@ jobs:
 
 ## GitHub Pages (Optional)
 
-Host documentation at `https://yourorg.github.io/Demo_503/`:
+Host documentation at `https://christianpetri.github.io/kubernetes-maintenance-mode/`:
 
 1. Create `docs/index.html` or use Jekyll
 2. Settings → Pages → Source: `main` branch, `/docs` folder
@@ -134,7 +134,7 @@ Consider adding:
 After gaining traction, add star history badge:
 
 ```markdown
-[![Star History](https://api.star-history.com/svg?repos=YourOrg/Demo_503&type=Date)](https://star-history.com/#YourOrg/Demo_503)
+[![Star History](https://api.star-history.com/svg?repos=christianpetri/kubernetes-maintenance-mode&type=Date)](https://star-history.com/#christianpetri/kubernetes-maintenance-mode)
 ```
 
 Delete this file once you've applied the recommendations.

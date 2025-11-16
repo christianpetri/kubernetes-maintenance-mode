@@ -272,4 +272,4 @@ If you encounter issues not covered here:
 2. Check events: `kubectl get events -n sample-app`
 3. Verify configuration: `kubectl get all -n sample-app`
 4. Review [DESIGN.md](../DESIGN.md) for architecture details
-5. Check [GitHub Issues](https://github.com/christianpetri/openshift-maintenance-demo/issues)
+5. Check [GitHub Issues](https://github.com/christianpetri/kubernetes-maintenance-mode/issues)

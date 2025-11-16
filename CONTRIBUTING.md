@@ -16,8 +16,8 @@ Thank you for your interest in contributing! This guide will help you maintain c
 
 ```powershell
 # Clone the repository
-git clone https://github.com/christianpetri/openshift-maintenance-demo.git
-cd openshift-maintenance-demo
+git clone https://github.com/christianpetri/kubernetes-maintenance-mode.git
+cd kubernetes-maintenance-mode
 
 # Create virtual environment
 python -m venv venv
@@ -122,7 +122,7 @@ pre-commit autoupdate
 ## Project Structure
 
 ```text
-openshift-maintenance-demo/
+kubernetes-maintenance-mode/
 ├── app.py                          # Flask application with dual readiness logic
 ├── requirements.txt                # Python dependencies
 ├── Dockerfile                      # Container image
