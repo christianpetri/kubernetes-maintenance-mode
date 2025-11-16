@@ -41,6 +41,9 @@ dist/
 build/
 *.egg-info/
 
+# Docker images
+*.tar
+
 # Temporary analysis files
 .temp/
 

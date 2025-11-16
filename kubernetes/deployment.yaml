@@ -18,7 +18,7 @@ spec:
         app: sample-app
         tier: user
     spec:
-      terminationGracePeriodSeconds: 90  # 60s user drain + 15s endpoint propagation + 15s buffer
+      terminationGracePeriodSeconds: 30
       containers:
       - name: app
         image: sample-app:latest
@@ -26,16 +26,10 @@ spec:
         ports:
         - containerPort: 8080
           protocol: TCP
-        env:
-        - name: MAINTENANCE_MODE
-          valueFrom:
-            configMapKeyRef:
-              name: app-config
-              key: MAINTENANCE_MODE
-        - name: REDIS_HOST
-          value: "redis"
-        - name: REDIS_PORT
-          value: "6379"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
         resources:
           requests:
             memory: "128Mi"
@@ -59,6 +53,10 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
+      volumes:
+      - name: config
+        configMap:
+          name: sample-app-config
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -80,7 +78,7 @@ spec:
         app: sample-app
         tier: admin
     spec:
-      terminationGracePeriodSeconds: 30  # Admin pods don't need long drain (no user sessions)
+      terminationGracePeriodSeconds: 30
       containers:
       - name: app
         image: sample-app:latest
@@ -89,14 +87,12 @@ spec:
         - containerPort: 8080
           protocol: TCP
         env:
-        - name: MAINTENANCE_MODE
-          value: "false"
         - name: ADMIN_ACCESS
           value: "true"
-        - name: REDIS_HOST
-          value: "redis"
-        - name: REDIS_PORT
-          value: "6379"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          readOnly: true
         resources:
           requests:
             memory: "128Mi"
@@ -120,3 +116,7 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 2
+      volumes:
+      - name: config
+        configMap:
+          name: sample-app-config
