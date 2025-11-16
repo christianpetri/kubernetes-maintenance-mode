@@ -5,6 +5,9 @@ metadata:
   namespace: sample-app
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
+    # Serve custom maintenance page when backend returns 503
+    nginx.ingress.kubernetes.io/custom-http-errors: "503"
+    nginx.ingress.kubernetes.io/default-backend: maintenance-page
 spec:
   rules:
   - host: sample-app.local

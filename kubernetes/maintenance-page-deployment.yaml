@@ -1,0 +1,142 @@
+# ConfigMap containing the maintenance page HTML
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: maintenance-page-html
+  namespace: sample-app
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Maintenance Mode</title>
+        <meta http-equiv="refresh" content="300">
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+                max-width: 700px;
+                margin: 50px auto;
+                padding: 20px;
+                background: linear-gradient(135deg, #ffd89b 0%, #19547b 100%);
+                min-height: 100vh;
+                text-align: center;
+            }
+            .card {
+                background: white;
+                border-radius: 12px;
+                padding: 60px 40px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            }
+            .icon {
+                font-size: 80px;
+                margin-bottom: 20px;
+            }
+            h1 {
+                color: #2d3748;
+                margin: 20px 0;
+            }
+            p {
+                color: #4a5568;
+                font-size: 18px;
+                line-height: 1.6;
+            }
+            .retry {
+                background: #f7fafc;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 30px 0;
+                color: #2d3748;
+            }
+            code {
+                background: #2d3748;
+                color: #48bb78;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-family: 'Monaco', monospace;
+            }
+            .timestamp {
+                font-size: 14px;
+                color: #718096;
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="icon">🔧</div>
+            <h1>Service Temporarily Unavailable</h1>
+            <p>We're performing scheduled maintenance to improve your experience.</p>
+            <p>This page will automatically refresh in 5 minutes.</p>
+
+            <div class="retry">
+                <strong>HTTP 503</strong> Service Unavailable<br>
+                <code>Retry-After: 300</code>
+            </div>
+
+            <p style="font-size: 14px; color: #718096;">
+                Admin access remains available during maintenance.
+            </p>
+
+            <div class="timestamp">
+                <script>document.write('Last checked: ' + new Date().toLocaleString());</script>
+            </div>
+        </div>
+    </body>
+    </html>
+---
+# Deployment for serving the maintenance page
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: maintenance-page
+  namespace: sample-app
+  labels:
+    app: maintenance-page
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: maintenance-page
+  template:
+    metadata:
+      labels:
+        app: maintenance-page
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        volumeMounts:
+        - name: maintenance-html
+          mountPath: /usr/share/nginx/html
+          readOnly: true
+        resources:
+          requests:
+            memory: "32Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "50m"
+      volumes:
+      - name: maintenance-html
+        configMap:
+          name: maintenance-page-html
+---
+# Service for the maintenance page
+apiVersion: v1
+kind: Service
+metadata:
+  name: maintenance-page
+  namespace: sample-app
+  labels:
+    app: maintenance-page
+spec:
+  selector:
+    app: maintenance-page
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP

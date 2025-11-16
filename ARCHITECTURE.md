@@ -281,7 +281,7 @@ readinessProbe:
 ## Summary
 
 | Layer | Responsibility | Implementation |
-|-------|---------------|----------------|
+|-------|----------------|----------------|
 | **DEV** | Return 503 when told | `@app.before_request` + config file check |
 | **OPS** | Control traffic routing | Readiness probes + Service endpoints |
 | **Kubernetes** | Orchestration | ConfigMap + dual deployments |

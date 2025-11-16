@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Maintenance Mode</title>
+    <meta http-equiv="refresh" content="300">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #ffd89b 0%, #19547b 100%);
+            min-height: 100vh;
+            text-align: center;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 50px 40px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        .icon {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #2d3748;
+            margin: 20px 0;
+            font-size: 2em;
+        }
+        h2 {
+            color: #4a5568;
+            font-size: 1.3em;
+            font-weight: 600;
+            margin: 30px 0 15px 0;
+        }
+        p {
+            color: #4a5568;
+            font-size: 18px;
+            line-height: 1.6;
+            margin: 15px 0;
+        }
+        .highlight-box {
+            background: #e6fffa;
+            border-left: 4px solid #38b2ac;
+            padding: 20px;
+            margin: 25px 0;
+            text-align: left;
+        }
+        .highlight-box strong {
+            color: #234e52;
+            font-size: 1.1em;
+        }
+        .retry {
+            background: #f7fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 30px 0;
+            color: #2d3748;
+        }
+        code {
+            background: #2d3748;
+            color: #48bb78;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'Monaco', monospace;
+        }
+        .flow {
+            background: #fef5e7;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: left;
+            font-size: 14px;
+            line-height: 2;
+        }
+        .flow-arrow {
+            color: #e67e22;
+            font-weight: bold;
+            margin: 0 10px;
+        }
+        .timestamp {
+            font-size: 14px;
+            color: #718096;
+            margin-top: 20px;
+        }
+        .served-by {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 25px 0;
+            font-weight: bold;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="icon">🔧</div>
+        <h1>Service Under Maintenance</h1>
+        
+        <div class="served-by">
+            📍 You are viewing the STATIC MAINTENANCE PAGE<br>
+            (Served by Ingress Controller, NOT from application pods)
+        </div>
+
+        <p>We're performing scheduled maintenance to improve your experience.</p>
+
+        <h2>🔄 What's Happening Behind the Scenes:</h2>
+        
+        <div class="highlight-box">
+            <strong>1. Application Pods Status:</strong> NotReady (Maintenance Mode)<br>
+            <strong>2. Service Endpoints:</strong> Empty (No healthy pods)<br>
+            <strong>3. Kubernetes Action:</strong> Removed pods from load balancer<br>
+            <strong>4. Result:</strong> Traffic routed here instead
+        </div>
+
+        <h2>📡 Production Traffic Flow:</h2>
+        
+        <div class="flow">
+            <strong>Normal Operation:</strong><br>
+            Your Browser <span class="flow-arrow">→</span> Ingress <span class="flow-arrow">→</span> Service <span class="flow-arrow">→</span> Application Pods ✅<br><br>
+            
+            <strong>During Maintenance (Right Now):</strong><br>
+            Your Browser <span class="flow-arrow">→</span> Ingress <span class="flow-arrow">→</span> Service <span style="color: red; font-weight: bold;">[No Endpoints]</span> <span class="flow-arrow">→</span> <strong style="color: #e67e22;">This Maintenance Page</strong> 🔧
+        </div>
+
+        <div class="retry">
+            <strong>HTTP 503</strong> Service Unavailable<br>
+            <code>Retry-After: 300 seconds</code><br>
+            <small style="color: #718096;">This page will automatically refresh in 5 minutes</small>
+        </div>
+
+        <p style="font-size: 16px; color: #2d6a4f; font-weight: 600; margin-top: 30px;">
+            ✅ Admin access remains available on a separate service during maintenance
+        </p>
+
+        <div class="timestamp">
+            <script>document.write('⏰ Last checked: ' + new Date().toLocaleString());</script>
+        </div>
+    </div>
+</body>
+</html>
