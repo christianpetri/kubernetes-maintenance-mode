@@ -93,7 +93,7 @@ switch ($Action) {
         kubectl get pods -n sample-app
         
         Write-Host "`nService Endpoints:" -ForegroundColor Cyan
-        kubectl get endpoints -n sample-app
+        kubectl get endpointslices -n sample-app -o wide
     }
     
     'clean' {
