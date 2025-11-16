@@ -41,3 +41,6 @@ dist/
 build/
 *.egg-info/
 
+# Temporary analysis files
+.temp/
+

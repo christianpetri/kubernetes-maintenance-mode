@@ -59,32 +59,72 @@ eventSource.addEventListener('drain', function(e) {
 
 ### 3. Graceful Shutdown Flow
 
-When Kubernetes sends SIGTERM (pod deletion):
+**Two Scenarios for User Notification:**
+
+#### Scenario A: Maintenance Mode Activation (ConfigMap)
+
+When admin enables maintenance mode via ConfigMap:
+
+```
+1. Admin patches ConfigMap
+   └─> kubectl patch configmap app-config -p '{"data":{"MAINTENANCE_MODE":"true"}}'
+
+2. Admin restarts user pods
+   └─> kubectl delete pods -l tier=user
+
+3. Monitor thread detects change (checks every 5s)
+   └─> is_maintenance_mode() returns True
+
+4. Send SSE drain notification to all connected users
+   └─> "Maintenance mode activated. Please save your work and logout."
+
+5. User browsers show countdown banner
+   └─> Red banner: "⚠️ Maintenance mode activated"
+   └─> 60-second countdown timer
+   └─> Auto-logout after countdown
+
+6. Readiness probe fails (/ready returns 503)
+   └─> Pods removed from Service endpoints
+
+7. New users get static 503 page
+   └─> "We'll be back soon" maintenance page
+
+8. Admin monitors /admin/users dashboard
+   └─> Watches active session count → 0
+
+9. Safe to perform upgrade!
+```
+
+#### Scenario B: Pod Deletion (SIGTERM)
+
+When Kubernetes sends SIGTERM (pod deletion/scale-down):
 
 ```
 1. Set SHUTTING_DOWN flag
    └─> Stop accepting new sessions
-   
+
 2. Count active users
    └─> Print to stderr: "10 active users detected"
-   
+
 3. Send SSE drain notification
    └─> Each client shows countdown banner
-   
+   └─> "Server shutting down in 60s. Please save your work and logout."
+
 4. Wait 60 seconds for graceful logout
    └─> Print every 10s: "7 users remaining (50s left)..."
-   
+
 5. Force-close remaining sessions
    └─> Track forced_logouts_total metric
-   
+   └─> Clear Redis session keys
+
 6. Wait 15s for endpoint propagation
    └─> Let kube-proxy/Ingress update routing
-   
+
 7. Exit cleanly
    └─> sys.exit(0)
 ```
 
-**Timeline:**
+**Timeline (Scenario B):**
 ```
 T+0s:  SIGTERM received
        "⚠️ Server shutting down in 60s - please save and logout"
@@ -97,7 +137,9 @@ T+60s: Force-close 1 remaining session
 T+75s: Exit (after endpoint propagation)
 ```
 
-### 4. Admin Dashboard
+**Key Difference:**
+- **Scenario A**: Persistent maintenance (until ConfigMap changed back)
+- **Scenario B**: Temporary shutdown (single pod restart/scale-down)### 4. Admin Dashboard
 
 View active sessions in real-time:
 

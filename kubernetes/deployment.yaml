@@ -32,6 +32,10 @@ spec:
             configMapKeyRef:
               name: app-config
               key: MAINTENANCE_MODE
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
         resources:
           requests:
             memory: "128Mi"
@@ -89,6 +93,10 @@ spec:
           value: "false"
         - name: ADMIN_ACCESS
           value: "true"
+        - name: REDIS_HOST
+          value: "redis"
+        - name: REDIS_PORT
+          value: "6379"
         resources:
           requests:
             memory: "128Mi"

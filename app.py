@@ -70,13 +70,28 @@ import tempfile
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from uuid import uuid4
 
+import redis
 from flask import Flask, Response, jsonify, redirect, render_template_string, request, session
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)  # For session management
+
+# Redis connection for shared session storage (production pattern)
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+
+try:
+    redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True, socket_connect_timeout=2)
+    redis_client.ping()
+    REDIS_AVAILABLE = True
+    print(f"[REDIS] Connected to Redis at {REDIS_HOST}:{REDIS_PORT}", file=sys.stderr)
+except Exception as e:
+    REDIS_AVAILABLE = False
+    redis_client = None
+    print(f"[REDIS] Redis unavailable, falling back to in-memory storage: {e}", file=sys.stderr)
 
 # Maintenance flag file (local development only - doesn't work in K8s)
 # Use temp directory that works cross-platform (Windows/Linux)
@@ -85,10 +100,14 @@ MAINTENANCE_FLAG = Path(tempfile.gettempdir()) / "maintenance.flag"
 # Track graceful shutdown state
 SHUTTING_DOWN = False
 
-# Active user sessions tracking (production pattern)
-# In real production: use Redis/Memcached for multi-pod visibility
-# For demo: in-memory dict showing the pattern
-ACTIVE_SESSIONS = {}  # {session_id: {"user": "username", "login_time": datetime, "last_activity": datetime, "pod": hostname}}
+# Maintenance mode notification tracking
+MAINTENANCE_NOTIFIED = False  # Track if we've sent maintenance notification
+MAINTENANCE_CHECK_THREAD = None
+
+# Active user sessions tracking (production pattern with Redis fallback)
+# Primary: Redis for cross-pod visibility
+# Fallback: In-memory dict if Redis unavailable
+ACTIVE_SESSIONS = {}  # Only used when Redis unavailable
 SESSIONS_LOCK = Lock()
 
 # SSE (Server-Sent Events) clients for real-time notifications
@@ -126,12 +145,66 @@ def is_admin_access():
     return os.getenv("ADMIN_ACCESS", "").lower() == "true"
 
 
+def monitor_maintenance_mode():
+    """
+    Background thread to monitor maintenance mode changes and notify users.
+
+    When maintenance mode is enabled:
+    1. Send SSE drain notification to all connected users
+    2. Give users 60 seconds to save work and logout
+    3. Track notification to avoid duplicate sends
+    """
+    global MAINTENANCE_NOTIFIED
+
+    print("[MAINTENANCE MONITOR] Starting maintenance mode monitor thread", file=sys.stderr)
+
+    while not SHUTTING_DOWN:
+        try:
+            current_maintenance = is_maintenance_mode()
+
+            # Maintenance mode just enabled
+            if current_maintenance and not MAINTENANCE_NOTIFIED:
+                active_count = len(get_all_sessions())
+
+                if active_count > 0:
+                    print(f"[MAINTENANCE] Maintenance mode enabled, notifying {active_count} users", file=sys.stderr)
+
+                    # Send drain notification via SSE
+                    send_sse_event("drain", {
+                        "message": "Maintenance mode activated. Please save your work and logout.",
+                        "countdown": 60,
+                        "forced_logout_at": (datetime.now() + timedelta(seconds=60)).isoformat()
+                    })
+
+                    with METRICS_LOCK:
+                        METRICS["drain_notifications_sent"] += active_count
+
+                    MAINTENANCE_NOTIFIED = True
+                else:
+                    print("[MAINTENANCE] Maintenance mode enabled, no active users", file=sys.stderr)
+                    MAINTENANCE_NOTIFIED = True
+
+            # Maintenance mode disabled
+            elif not current_maintenance and MAINTENANCE_NOTIFIED:
+                print("[MAINTENANCE] Maintenance mode disabled", file=sys.stderr)
+                MAINTENANCE_NOTIFIED = False
+
+            # Check every 5 seconds
+            time.sleep(5)
+
+        except Exception as e:
+            print(f"[MAINTENANCE MONITOR] Error: {e}", file=sys.stderr)
+            time.sleep(5)
+
+    print("[MAINTENANCE MONITOR] Monitor thread shutting down", file=sys.stderr)
+
+
 def graceful_shutdown(signum, frame):
     """
     Handle SIGTERM for graceful shutdown (Kubernetes best practice).
 
     **PRODUCTION PATTERN: Notify Active Users Before Shutdown**
-    
+
     When Kubernetes deletes a pod:
     1. Endpoints removed from Service (starts here)
     2. SIGTERM sent to container (we handle it here)
@@ -144,7 +217,7 @@ def graceful_shutdown(signum, frame):
     3. Wait 60 seconds for users to save work and logout
     4. Force-close remaining sessions
     5. Exit cleanly
-    
+
     This pattern gives users time to:
     - Save unsaved work
     - Close WebSocket connections gracefully
@@ -153,15 +226,14 @@ def graceful_shutdown(signum, frame):
     """
     global SHUTTING_DOWN
     SHUTTING_DOWN = True
-    
-    print(f"[GRACEFUL SHUTDOWN] Received SIGTERM signal", file=sys.stderr)
-    
-    # Count active users before drain
-    with SESSIONS_LOCK:
-        active_count = len(ACTIVE_SESSIONS)
-    
+
+    print("[GRACEFUL SHUTDOWN] Received SIGTERM signal", file=sys.stderr)
+
+    # Count active users before drain (across all pods via Redis)
+    active_count = len(get_all_sessions())
+
     print(f"[GRACEFUL SHUTDOWN] {active_count} active users detected", file=sys.stderr)
-    
+
     # Notify all connected clients via SSE
     if active_count > 0:
         print(f"[GRACEFUL SHUTDOWN] Sending drain notification to {active_count} users...", file=sys.stderr)
@@ -170,38 +242,45 @@ def graceful_shutdown(signum, frame):
             "countdown": 60,
             "forced_logout_at": (datetime.now() + timedelta(seconds=60)).isoformat()
         })
-        
+
         with METRICS_LOCK:
             METRICS["drain_notifications_sent"] += active_count
-        
+
         # Wait 60 seconds for graceful logout (production pattern)
-        print(f"[GRACEFUL SHUTDOWN] Waiting 60s for users to logout gracefully...", file=sys.stderr)
+        print("[GRACEFUL SHUTDOWN] Waiting 60s for users to logout gracefully...", file=sys.stderr)
         for i in range(60, 0, -10):
             time.sleep(10)
-            with SESSIONS_LOCK:
-                remaining = len(ACTIVE_SESSIONS)
+            remaining = len(get_all_sessions())
             print(f"[GRACEFUL SHUTDOWN] {remaining} users remaining ({i-10}s left)...", file=sys.stderr)
-        
+
         # Force-close remaining sessions
-        with SESSIONS_LOCK:
-            forced_count = len(ACTIVE_SESSIONS)
-            if forced_count > 0:
-                print(f"[GRACEFUL SHUTDOWN] Force-closing {forced_count} remaining sessions", file=sys.stderr)
-                with METRICS_LOCK:
-                    METRICS["forced_logouts_total"] += forced_count
-                ACTIVE_SESSIONS.clear()
-    
+        forced_count = len(get_all_sessions())
+        if forced_count > 0:
+            print(f"[GRACEFUL SHUTDOWN] Force-closing {forced_count} remaining sessions", file=sys.stderr)
+            with METRICS_LOCK:
+                METRICS["forced_logouts_total"] += forced_count
+            # Clear Redis sessions
+            if REDIS_AVAILABLE and redis_client:
+                try:
+                    for key in redis_client.keys("session:*"):
+                        redis_client.delete(key)
+                except Exception as e:
+                    print(f"[REDIS] Error clearing sessions: {e}", file=sys.stderr)
+            else:
+                with SESSIONS_LOCK:
+                    ACTIVE_SESSIONS.clear()
+
     # Additional 15s wait for endpoint propagation
-    print(f"[GRACEFUL SHUTDOWN] Waiting 15s for endpoint removal to propagate...", file=sys.stderr)
-    
+    print("[GRACEFUL SHUTDOWN] Waiting 15s for endpoint removal to propagate...", file=sys.stderr)
+
     # Give Kubernetes time to remove endpoints from:
     # - kube-proxy (iptables)
     # - Ingress controllers
     # - Service meshes
     # - CoreDNS
     time.sleep(15)
-    
-    print(f"[GRACEFUL SHUTDOWN] Shutting down cleanly...", file=sys.stderr)
+
+    print("[GRACEFUL SHUTDOWN] Shutting down cleanly...", file=sys.stderr)
     # Close any database connections, WebSockets, etc. here
     sys.exit(0)
 
@@ -211,36 +290,86 @@ signal.signal(signal.SIGTERM, graceful_shutdown)
 
 
 # ============================================================================
-# SESSION MANAGEMENT & TRACKING (Production Pattern)
+# SESSION MANAGEMENT & TRACKING (Production Pattern with Redis)
 # ============================================================================
 
+def get_all_sessions():
+    """Get all active sessions from Redis or in-memory fallback."""
+    if REDIS_AVAILABLE and redis_client:
+        try:
+            session_keys = redis_client.keys("session:*")
+            sessions = {}
+            for key in session_keys:
+                session_id = key.replace("session:", "")
+                session_data = redis_client.hgetall(key)
+                if session_data:
+                    # Convert Redis strings back to proper types
+                    sessions[session_id] = {
+                        "user": session_data.get("user", "anonymous"),
+                        "login_time": datetime.fromisoformat(session_data["login_time"]),
+                        "last_activity": datetime.fromisoformat(session_data["last_activity"]),
+                        "pod": session_data.get("pod", "unknown"),
+                    }
+            return sessions
+        except Exception as e:
+            print(f"[REDIS] Error reading sessions: {e}", file=sys.stderr)
+            return {}
+    else:
+        # Fallback to in-memory
+        with SESSIONS_LOCK:
+            return dict(ACTIVE_SESSIONS)
+
+
 def get_or_create_session_id():
-    """Get existing session ID or create new one."""
+    """Get existing session ID or create new one (Redis-backed)."""
     if "session_id" not in session:
         session["session_id"] = str(uuid4())
         session["login_time"] = datetime.now().isoformat()
-        
-        # Track new session
-        with SESSIONS_LOCK:
-            ACTIVE_SESSIONS[session["session_id"]] = {
-                "user": session.get("username", "anonymous"),
-                "login_time": datetime.now(),
-                "last_activity": datetime.now(),
-                "pod": os.getenv("HOSTNAME", "localhost"),
-            }
-        
+
+        session_data = {
+            "user": session.get("username", "anonymous"),
+            "login_time": datetime.now().isoformat(),
+            "last_activity": datetime.now().isoformat(),
+            "pod": os.getenv("HOSTNAME", "localhost"),
+        }
+
+        # Track new session in Redis or in-memory
+        if REDIS_AVAILABLE and redis_client:
+            try:
+                redis_client.hset(f"session:{session['session_id']}", mapping=session_data)
+                redis_client.expire(f"session:{session['session_id']}", 3600)  # 1 hour TTL
+            except Exception as e:
+                print(f"[REDIS] Error creating session: {e}", file=sys.stderr)
+        else:
+            # Fallback to in-memory
+            with SESSIONS_LOCK:
+                ACTIVE_SESSIONS[session["session_id"]] = {
+                    "user": session_data["user"],
+                    "login_time": datetime.fromisoformat(session_data["login_time"]),
+                    "last_activity": datetime.fromisoformat(session_data["last_activity"]),
+                    "pod": session_data["pod"],
+                }
+
         with METRICS_LOCK:
             METRICS["total_logins"] += 1
-            METRICS["active_sessions_total"] = len(ACTIVE_SESSIONS)
-    
+            METRICS["active_sessions_total"] = len(get_all_sessions())
+
     return session["session_id"]
 
 
 def update_session_activity(session_id):
-    """Update last activity timestamp for session (production pattern)."""
-    with SESSIONS_LOCK:
-        if session_id in ACTIVE_SESSIONS:
-            ACTIVE_SESSIONS[session_id]["last_activity"] = datetime.now()
+    """Update last activity timestamp for session (Redis-backed)."""
+    if REDIS_AVAILABLE and redis_client:
+        try:
+            redis_client.hset(f"session:{session_id}", "last_activity", datetime.now().isoformat())
+            redis_client.expire(f"session:{session_id}", 3600)  # Refresh TTL
+        except Exception as e:
+            print(f"[REDIS] Error updating session activity: {e}", file=sys.stderr)
+    else:
+        # Fallback to in-memory
+        with SESSIONS_LOCK:
+            if session_id in ACTIVE_SESSIONS:
+                ACTIVE_SESSIONS[session_id]["last_activity"] = datetime.now()
 
 
 def send_sse_event(event_type, data):
@@ -262,12 +391,12 @@ def send_sse_event(event_type, data):
 def events():
     """
     Server-Sent Events endpoint (production pattern for real-time notifications).
-    
+
     Allows server to push notifications to clients:
     - Maintenance mode activation
     - Drain warnings ("save your work, logging out in 60s")
     - Pod shutdown notifications
-    
+
     SSE is better than WebSockets for one-way notifications:
     - Simpler (just HTTP)
     - Auto-reconnects
@@ -278,11 +407,11 @@ def events():
         client_queue = []
         with SSE_LOCK:
             SSE_CLIENTS.append(client_queue)
-        
+
         try:
             # Send initial connection confirmation
-            yield f"data: {{'event': 'connected', 'message': 'SSE connection established'}}\n\n"
-            
+            yield "data: {'event': 'connected', 'message': 'SSE connection established'}\n\n"
+
             # Keep connection alive and send events
             while True:
                 if client_queue:
@@ -297,7 +426,7 @@ def events():
             with SSE_LOCK:
                 if client_queue in SSE_CLIENTS:
                     SSE_CLIENTS.remove(client_queue)
-    
+
     return Response(event_stream(), mimetype="text/event-stream")
 
 
@@ -308,33 +437,34 @@ def events():
 @app.route("/admin/users")
 def admin_users():
     """
-    Admin dashboard showing active user sessions (production pattern).
-    
+    Admin dashboard showing active user sessions (production pattern with Redis).
+
     Shows:
-    - Total active sessions count
+    - Total active sessions count ACROSS ALL PODS (via Redis)
     - User details (session ID, username, login time, last activity)
     - Which pod they're connected to
     - Session duration
-    
-    In production: This would query Redis/Memcached to see sessions
-    across ALL pods. For demo: shows this pod's sessions.
+
+    Production-ready: Queries Redis to see sessions across ALL pods.
     """
     if not is_admin_access():
         return jsonify({"error": "Admin access required"}), 403
-    
-    with SESSIONS_LOCK:
-        sessions_data = []
-        for session_id, session_info in ACTIVE_SESSIONS.items():
-            duration = (datetime.now() - session_info["login_time"]).seconds
-            sessions_data.append({
-                "session_id": session_id,
-                "user": session_info["user"],
-                "pod": session_info["pod"],
-                "login_time": session_info["login_time"].isoformat(),
-                "last_activity": session_info["last_activity"].isoformat(),
-                "duration_seconds": duration,
-            })
-    
+
+    # Get all sessions from Redis (cross-pod visibility!)
+    all_sessions = get_all_sessions()
+
+    sessions_data = []
+    for session_id, session_info in all_sessions.items():
+        duration = (datetime.now() - session_info["login_time"]).seconds
+        sessions_data.append({
+            "session_id": session_id,
+            "user": session_info["user"],
+            "pod": session_info["pod"],
+            "login_time": session_info["login_time"].isoformat(),
+            "last_activity": session_info["last_activity"].isoformat(),
+            "duration_seconds": duration,
+        })
+
     # HTML Dashboard
     dashboard_html = f"""
     <!DOCTYPE html>
@@ -373,7 +503,7 @@ def admin_users():
                 <th>Duration</th>
             </tr>
     """
-    
+
     for session_data in sessions_data:
         duration_min = session_data["duration_seconds"] // 60
         dashboard_html += f"""
@@ -386,14 +516,14 @@ def admin_users():
                 <td>{duration_min}m</td>
             </tr>
         """
-    
+
     dashboard_html += """
         </table>
         <p style="margin-top: 20px; color: #6c757d; text-align: center;">Auto-refreshes every 5 seconds</p>
     </body>
     </html>
     """
-    
+
     return dashboard_html
 
 
@@ -405,7 +535,7 @@ def admin_users():
 def metrics():
     """
     Prometheus metrics endpoint (production pattern).
-    
+
     Exposes:
     - active_sessions_total: Current active sessions
     - drain_notifications_sent: How many drain warnings sent
@@ -413,9 +543,8 @@ def metrics():
     - forced_logouts_total: Sessions force-closed after timeout
     - total_logins: Lifetime login count
     """
-    with SESSIONS_LOCK:
-        METRICS["active_sessions_total"] = len(ACTIVE_SESSIONS)
-    
+    METRICS["active_sessions_total"] = len(get_all_sessions())
+
     with METRICS_LOCK:
         metrics_text = f"""# HELP active_sessions_total Current number of active user sessions
 # TYPE active_sessions_total gauge
@@ -437,7 +566,7 @@ forced_logouts_total {METRICS['forced_logouts_total']}
 # TYPE total_logins counter
 total_logins {METRICS['total_logins']}
 """
-    
+
     return Response(metrics_text, mimetype="text/plain")
 
 
@@ -461,7 +590,7 @@ USER_PAGE = """
         .metric-value { font-weight: 600; color: #28a745; }
         a { display: inline-block; margin-top: 20px; padding: 14px 32px; background: #007bff; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; transition: all 0.3s; }
         a:hover { background: #0056b3; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,123,255,0.4); }
-        
+
         /* Drain notification banner */
         #drain-banner { display: none; position: fixed; top: 0; left: 0; right: 0; background: #ff6b6b; color: white; padding: 20px; text-align: center; z-index: 9999; box-shadow: 0 4px 12px rgba(0,0,0,0.3); animation: slideDown 0.5s; }
         @keyframes slideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
@@ -473,27 +602,27 @@ USER_PAGE = """
     <script>
         // Server-Sent Events (SSE) for real-time notifications
         const eventSource = new EventSource('/events');
-        
+
         eventSource.addEventListener('connected', function(e) {
             console.log('[SSE] Connected to server notifications');
         });
-        
+
         eventSource.addEventListener('drain', function(e) {
             const data = JSON.parse(e.data);
             console.log('[SSE] Drain notification received:', data);
-            
+
             // Show drain banner
             const banner = document.getElementById('drain-banner');
             banner.style.display = 'block';
-            
+
             // Start countdown
             let secondsLeft = data.countdown || 60;
             const countdownEl = document.getElementById('countdown');
-            
+
             const countdownInterval = setInterval(function() {
                 secondsLeft--;
                 countdownEl.textContent = secondsLeft + 's';
-                
+
                 if (secondsLeft <= 0) {
                     clearInterval(countdownInterval);
                     // Auto-logout after countdown
@@ -501,7 +630,7 @@ USER_PAGE = """
                 }
             }, 1000);
         });
-        
+
         eventSource.addEventListener('error', function(e) {
             console.error('[SSE] Connection error:', e);
             // Will auto-reconnect
@@ -517,7 +646,7 @@ USER_PAGE = """
         <p>Auto-logout in <span id="countdown">60</span> seconds</p>
         <a href="/logout?reason=drain" class="logout-btn">Logout Now</a>
     </div>
-    
+
     <div class="container">
         <h1>🚀 Kubernetes Demo App</h1>
         <div class="badge">Service Available</div>
@@ -527,7 +656,10 @@ USER_PAGE = """
             <div class="metric"><span class="metric-label">Liveness Probe</span><span class="metric-value">✓ HEALTHY</span></div>
             <div class="metric"><span class="metric-label">Service Endpoints</span><span class="metric-value">ACTIVE</span></div>
         </div>
-        <a href="/admin">Admin Panel →</a>
+        <div style="margin-top: 30px; display: flex; gap: 15px; justify-content: center;">
+            <a href="/admin" style="background: #6c757d;">Admin Panel →</a>
+            <a href="/logout?reason=manual" style="background: #dc3545;">Logout</a>
+        </div>
     </div>
 </body>
 </html>
@@ -773,7 +905,7 @@ MAINTENANCE_PAGE = """
                 </div>
             </div>
             <p style="font-size: 13px; color: #6c757d; margin-top: 15px; line-height: 1.6;">
-                <strong>How it works:</strong> Readiness probe returns <code>503</code> → Kubernetes removes pod from Service endpoints → 
+                <strong>How it works:</strong> Readiness probe returns <code>503</code> → Kubernetes removes pod from Service endpoints →
                 kube-proxy updates iptables → Ingress stops routing → Existing connections drain for 15-30s → Clean shutdown
             </p>
         </div>
@@ -874,7 +1006,7 @@ def check_maintenance():
     - Single point of control (DRY principle)
     - Runs before any route handler
     - Can return response or None to continue routing
-    
+
     Session Tracking Pattern:
     - Create/update session on every request
     - Track last activity for timeout detection
@@ -908,7 +1040,7 @@ def check_maintenance():
 def index():
     """
     Main page - returns the normal page with SSE connection.
-    
+
     Maintenance handled by before_request.
     Session tracking automatic via before_request.
     """
@@ -918,28 +1050,35 @@ def index():
 @app.route("/logout")
 def logout():
     """
-    Logout endpoint (production pattern for graceful drain).
-    
+    Logout endpoint (production pattern for graceful drain with Redis).
+
     When user logs out:
-    - Remove session from active sessions
+    - Remove session from Redis (visible across all pods)
     - Track if it was graceful (after drain notification) or manual
     - Clear Flask session
     """
     session_id = session.get("session_id")
     reason = request.args.get("reason", "manual")
-    
+
     if session_id:
-        with SESSIONS_LOCK:
-            if session_id in ACTIVE_SESSIONS:
-                del ACTIVE_SESSIONS[session_id]
-        
+        # Remove from Redis or in-memory
+        if REDIS_AVAILABLE and redis_client:
+            try:
+                redis_client.delete(f"session:{session_id}")
+            except Exception as e:
+                print(f"[REDIS] Error deleting session: {e}", file=sys.stderr)
+        else:
+            with SESSIONS_LOCK:
+                if session_id in ACTIVE_SESSIONS:
+                    del ACTIVE_SESSIONS[session_id]
+
         with METRICS_LOCK:
             if reason == "drain":
                 METRICS["graceful_logouts_total"] += 1
-            METRICS["active_sessions_total"] = len(ACTIVE_SESSIONS)
-    
+            METRICS["active_sessions_total"] = len(get_all_sessions())
+
     session.clear()
-    
+
     logout_html = """
     <!DOCTYPE html>
     <html>
@@ -965,7 +1104,7 @@ def logout():
     </body>
     </html>
     """
-    
+
     return logout_html
 
 
@@ -973,7 +1112,7 @@ def logout():
 def admin():
     """
     Admin panel - always accessible (production pattern).
-    
+
     Shows:
     - Maintenance mode status
     - Toggle button (local dev only)
@@ -981,11 +1120,11 @@ def admin():
     - Link to metrics (/metrics)
     """
     maintenance_status = "MAINTENANCE ON" if is_maintenance_mode() else "NORMAL OPERATION"
-    
+
     # Get active sessions count
     with SESSIONS_LOCK:
         active_count = len(ACTIVE_SESSIONS)
-    
+
     # Updated admin page with links
     admin_page_with_links = ADMIN_PAGE.replace(
         '<a href="/">← Back to Home</a>',
@@ -1000,10 +1139,10 @@ def admin():
         </div>
         '''
     )
-    
+
     return render_template_string(
-        admin_page_with_links, 
-        maintenance_status=maintenance_status, 
+        admin_page_with_links,
+        maintenance_status=maintenance_status,
         maintenance_mode=is_maintenance_mode()
     )
 
@@ -1099,6 +1238,17 @@ def ready():
         return {"status": "not_ready", "maintenance_mode": True}, 503
 
     return {"status": "ready"}, 200
+
+
+# ============================================================================
+# STARTUP: Start background threads
+# ============================================================================
+
+# Start maintenance mode monitor thread (only for non-admin pods)
+if not is_admin_access():
+    MAINTENANCE_CHECK_THREAD = Thread(target=monitor_maintenance_mode, daemon=True)
+    MAINTENANCE_CHECK_THREAD.start()
+    print("[STARTUP] Maintenance mode monitor started", file=sys.stderr)
 
 
 if __name__ == "__main__":
