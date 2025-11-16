@@ -26,6 +26,9 @@ spec:
         ports:
         - containerPort: 8080
           protocol: TCP
+        env:
+        - name: REDIS_ENABLED
+          value: "true"
         volumeMounts:
         - name: config
           mountPath: /config
@@ -88,6 +91,8 @@ spec:
           protocol: TCP
         env:
         - name: ADMIN_ACCESS
+          value: "true"
+        - name: REDIS_ENABLED
           value: "true"
         volumeMounts:
         - name: config
