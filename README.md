@@ -177,7 +177,16 @@ This automated script will:
 - **User Interface:** Check "USER Service Tunnel" window
 - **Admin Interface:** Check "ADMIN Service Tunnel" window
 
-No manual port-forwarding or hosts file editing required
+No manual port-forwarding or hosts file editing required.
+
+### 3. Access the Application
+
+Use the URLs displayed in the tunnel windows:
+
+- Open the user interface URL from the "USER Service Tunnel" window
+- Open the admin interface URL from the "ADMIN Service Tunnel" window
+
+Both interfaces should display the normal operation page.
 
 ### 4. Enable Maintenance Mode
 
@@ -224,7 +233,7 @@ The key innovation is using **separate deployments with different readiness prob
 
 **Admin Deployment** (`sample-app-admin`):
 
-- Has `X-Admin-Access=true` environment variable
+- Has `ADMIN_ACCESS=true` environment variable
 - **Always returns 200** from `/ready` endpoint
 - Kubernetes keeps pods as "Ready"
 - Pods stay **in Service** (always receives traffic)
@@ -255,7 +264,7 @@ The key innovation is using **separate deployments with different readiness prob
 
 ```python
 def is_admin_access():
-    return os.environ.get('X-Admin-Access', '').lower() == 'true'
+    return os.environ.get('ADMIN_ACCESS', '').lower() == 'true'
 
 @app.route('/ready')
 def ready():
@@ -425,19 +434,19 @@ This maintenance mode pattern is applicable to many production scenarios:
 - Canary releases where new versions are tested by admins first
 - Database schema changes requiring application-level coordination
 
-### 🛡️ Emergency Response
+### Emergency Response
 
 - DDoS mitigation: Block public traffic while admins investigate
 - Security incidents: Isolate user access while maintaining operational visibility
 - Performance issues: Reduce load while diagnosing problems
 
-### 🔄 Data Processing
+### Data Processing
 
 - Batch processing jobs that require exclusive database access
 - ETL operations that temporarily block user queries
 - Cache rebuilding or reindexing operations
 
-### 🏢 Enterprise Scenarios
+### Enterprise Scenarios
 
 - Compliance audits requiring system freeze
 - Financial close periods with read-only data

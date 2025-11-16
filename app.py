@@ -18,6 +18,7 @@ Demo Enhancement:
 """
 
 import os
+import sys
 from pathlib import Path
 
 from flask import Flask, render_template_string, request
@@ -40,8 +41,6 @@ REDIS_PORT = int(redis_port_str)
 redis_client = None
 
 try:
-    import sys
-
     import redis
 
     redis_client = redis.Redis(
@@ -51,8 +50,6 @@ try:
     sys.stderr.write(f"[REDIS] Connected for demo state sync at {REDIS_HOST}:{REDIS_PORT}\n")
     sys.stderr.flush()
 except Exception as e:
-    import sys
-
     sys.stderr.write(f"[REDIS] Not available (demo mode will be per-pod): {e}\n")
     sys.stderr.flush()
     redis_client = None
