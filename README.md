@@ -1,5 +1,6 @@
 # Maintenance Mode Demo - Kubernetes Edition
 
+[![Lint](https://github.com/christianpetri/kubernetes-maintenance-mode/actions/workflows/lint.yml/badge.svg)](https://github.com/christianpetri/kubernetes-maintenance-mode/actions/workflows/lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.28+-blue.svg)](https://kubernetes.io/)
 [![Flask](https://img.shields.io/badge/Flask-3.0+-green.svg)](https://flask.palletsprojects.com/)
