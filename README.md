@@ -21,11 +21,6 @@ while **guaranteeing admin access remains available**.
 ![User Interface - Normal Mode](docs/images/user-normal-mode.png)
 *User-facing interface during normal operation*
 
-### Admin Control Panel
-
-![Admin Panel](docs/images/admin-panel.png)
-*Admin interface with maintenance mode controls (always accessible)*
-
 ### Maintenance Mode Active
 
 ![Maintenance Mode Enabled](docs/images/maintenance-enabled.png)

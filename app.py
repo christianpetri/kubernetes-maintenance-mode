@@ -41,14 +41,18 @@ redis_client = None
 
 try:
     import redis
+    import sys
 
     redis_client = redis.Redis(
         host=REDIS_HOST, port=REDIS_PORT, decode_responses=True, socket_connect_timeout=2
     )
     redis_client.ping()
-    print(f"[REDIS] Connected for demo state sync at {REDIS_HOST}:{REDIS_PORT}")
+    sys.stderr.write(f"[REDIS] Connected for demo state sync at {REDIS_HOST}:{REDIS_PORT}\n")
+    sys.stderr.flush()
 except Exception as e:
-    print(f"[REDIS] Not available (demo mode will be per-pod): {e}")
+    import sys
+    sys.stderr.write(f"[REDIS] Not available (demo mode will be per-pod): {e}\n")
+    sys.stderr.flush()
     redis_client = None
 
 
