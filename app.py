@@ -40,8 +40,9 @@ REDIS_PORT = int(redis_port_str)
 redis_client = None
 
 try:
-    import redis
     import sys
+
+    import redis
 
     redis_client = redis.Redis(
         host=REDIS_HOST, port=REDIS_PORT, decode_responses=True, socket_connect_timeout=2
@@ -51,6 +52,7 @@ try:
     sys.stderr.flush()
 except Exception as e:
     import sys
+
     sys.stderr.write(f"[REDIS] Not available (demo mode will be per-pod): {e}\n")
     sys.stderr.flush()
     redis_client = None
