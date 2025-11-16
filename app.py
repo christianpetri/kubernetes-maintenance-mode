@@ -9,6 +9,7 @@ Uses Flask's @app.before_request decorator (industry standard):
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 from flask import Flask, redirect, render_template_string, request
@@ -16,7 +17,8 @@ from flask import Flask, redirect, render_template_string, request
 app = Flask(__name__)
 
 # Maintenance flag file (shared across all workers)
-MAINTENANCE_FLAG = Path("/tmp/maintenance.flag")
+# Use temp directory that works cross-platform (Windows/Linux)
+MAINTENANCE_FLAG = Path(tempfile.gettempdir()) / "maintenance.flag"
 
 
 def is_maintenance_mode():
