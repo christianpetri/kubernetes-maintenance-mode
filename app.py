@@ -70,8 +70,13 @@ def is_maintenance_mode() -> bool:
     # Demo mode: Check Redis for shared state (instant cross-pod sync)
     if redis_client:
         try:
-            redis_state: str | None = redis_client.get("maintenance_mode")
-            if redis_state is not None:
+            redis_value = redis_client.get("maintenance_mode")
+            if redis_value is not None:
+                # Redis client returns bytes or str depending on decode_responses setting
+                if isinstance(redis_value, bytes):
+                    redis_state = redis_value.decode("utf-8")
+                else:
+                    redis_state = str(redis_value)
                 return redis_state.lower() == "true"
         except Exception:
             pass
