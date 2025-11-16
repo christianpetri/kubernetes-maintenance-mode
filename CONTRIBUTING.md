@@ -1,4 +1,4 @@
-# Contributing to OpenShift Maintenance Demo
+# Contributing to Kubernetes Maintenance Demo
 
 Thank you for your interest in contributing! This guide will help you maintain code quality standards.
 
@@ -7,19 +7,21 @@ Thank you for your interest in contributing! This guide will help you maintain c
 ### Prerequisites
 
 - Python 3.11+
+- Minikube v1.30+
+- kubectl
 - Docker Desktop
 - Git
 
 ### Initial Setup
 
-```bash
+```powershell
 # Clone the repository
 git clone https://github.com/christianpetri/openshift-maintenance-demo.git
 cd openshift-maintenance-demo
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+.\venv\Scripts\Activate.ps1  # On Linux/Mac: source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
@@ -29,6 +31,24 @@ pip install ruff mypy pre-commit
 
 # Set up pre-commit hooks
 pre-commit install
+```
+
+### Local Development with Minikube
+
+```powershell
+# Start Minikube
+minikube start --cpus=4 --memory=8192 --driver=docker
+
+# Build image in Minikube's Docker environment
+minikube docker-env | Invoke-Expression
+docker build -t sample-app:latest .
+
+# Deploy to Minikube
+kubectl apply -f kubernetes/
+
+# Port-forward for testing
+kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
+kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
 ```
 
 ## Code Quality Tools
@@ -106,33 +126,25 @@ pre-commit autoupdate
 
 ```text
 openshift-maintenance-demo/
-├── app.py                          # Main Flask application
+├── app.py                          # Flask application with dual readiness logic
 ├── requirements.txt                # Python dependencies
 ├── Dockerfile                      # Container image
-├── docker-compose.yml              # Local testing
 ├── pyproject.toml                  # Python project config + Ruff/mypy settings
 ├── .markdownlint.json              # Markdown linting rules
 ├── .pre-commit-config.yaml         # Pre-commit hook configuration
 ├── .gitignore                      # Git ignore patterns
 ├── README.md                       # Main documentation
 ├── CONTRIBUTING.md                 # This file
-├── docs/                           # Documentation
-│   └── MAINTENANCE_DEMO.md         # Single-source demo guide
-├── deploy/                         # (Deprecated) local/kind helpers
-│   ├── kind-cluster.yaml           # Deprecated
-│   ├── local-deploy.sh             # Deprecated
-│   └── local-deploy.ps1            # Deprecated
-├── openshift/                      # OpenShift manifests
+├── docs/
+│   └── MAINTENANCE_DEMO.md         # Detailed architecture guide
+├── kubernetes/                     # Kubernetes manifests (Minikube)
 │   ├── namespace.yaml
 │   ├── configmap.yaml
-│   ├── deployment.yaml
+│   ├── deployment.yaml             # User + Admin deployments
 │   ├── service.yaml
-│   ├── route.yaml
-│   └── hpa.yaml
-├── scripts/                        # Maintenance scripts
-│   ├── deploy.sh / deploy.ps1
-│   ├── enable-maintenance.sh / .ps1
-│   └── disable-maintenance.sh / .ps1
+│   └── ingress.yaml
+├── scripts/
+│   └── runme.ps1                   # Quick start script
 └── .github/
     ├── workflows/
     │   └── lint.yml                # CI/CD linting
@@ -141,30 +153,49 @@ openshift-maintenance-demo/
 
 ## Testing
 
-### Local Testing
+### Local Testing with Minikube
 
-```bash
-# Run with Docker Compose
-docker-compose up
+```powershell
+# Deploy to Minikube
+kubectl apply -f kubernetes/
 
-# Test in maintenance mode
-docker-compose up web-maintenance
+# Wait for pods
+kubectl get pods -n sample-app -w
 
-# Run with kind cluster
-./deploy/local-deploy.sh  # Linux/macOS
-.\deploy\local-deploy.ps1  # Windows
+# Port-forward services
+kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
+kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
 ```
 
-### Test Probes
+### Test Maintenance Mode
 
-```bash
-# Normal mode
-curl http://localhost:8888/health   # Should return 200
-curl http://localhost:8888/ready    # Should return 200
+```powershell
+# Enable maintenance
+kubectl patch configmap app-config -n sample-app --type=json `
+  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "true"}]'
+kubectl rollout restart deployment -n sample-app
 
-# Maintenance mode
-curl http://localhost:8081/health   # Should return 200 (still alive!)
-curl http://localhost:8081/ready    # Should return 503 (not ready)
+# Check pod status
+kubectl get pods -n sample-app
+# Admin should be 1/1 Ready, User should be 0/1 Not Ready
+
+# Test endpoints
+Invoke-WebRequest http://localhost:9090 -UseBasicParsing  # Should return 503
+Invoke-WebRequest http://localhost:9092 -UseBasicParsing  # Should return 200
+
+# Disable maintenance
+kubectl patch configmap app-config -n sample-app --type=json `
+  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "false"}]'
+kubectl rollout restart deployment -n sample-app
+```
+
+### Test Probes Directly
+
+```powershell
+# Test from inside a pod
+kubectl exec -n sample-app deploy/sample-app-user -- curl localhost:8080/health
+kubectl exec -n sample-app deploy/sample-app-user -- curl localhost:8080/ready
+kubectl exec -n sample-app deploy/sample-app-admin -- curl localhost:8080/ready
 ```
 
 ## Making Changes

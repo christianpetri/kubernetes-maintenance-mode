@@ -1,410 +1,387 @@
-# Maintenance Mode Demo
+# Maintenance Mode Demo - Kubernetes Edition
 
-Looking for the full, copy-paste demo? See `docs/MAINTENANCE_DEMO.md`.
+A demonstration of implementing maintenance mode in Kubernetes with 503 Service Unavailable responses
+for regular users while **guaranteeing admin access remains available** during maintenance windows.
 
-## OpenShift Maintenance Mode Demo (503)
+## Key Innovation: Admin Always Accessible
 
-A demonstration of implementing maintenance mode in OpenShift with 503 Service Unavailable responses
-for regular users while maintaining admin access during maintenance windows.
+This demo solves a critical problem: **How do you disable maintenance mode if the readiness check
+prevents all pods from receiving traffic?**
+
+**Solution**: Separate deployments with different readiness behaviors:
+
+- **User pods**: Return 503 from `/ready` during maintenance → removed from Service (no traffic)
+- **Admin pods**: Always return 200 from `/ready` → stay in Service (always accessible)
+
+This ensures administrators can **always access the control panel** to disable maintenance mode,
+even when user traffic is blocked.
 
 ## Features
 
-- **Dual-tier Architecture**: Separate user and admin pods running the same application
-- **Maintenance Mode Toggle**: ConfigMap-based maintenance mode that affects only user traffic
-- **503 Error Handling**: Proper HTTP 503 responses during maintenance
-- **Admin Access Preservation**: Admin interface remains accessible during maintenance
-- **Horizontal Pod Autoscaling**: Automatic scaling based on CPU and memory usage
-- **Health Checks**: OpenShift liveness and readiness probes
-- **Docker Compose Support**: Local testing with Docker
+- **Dual-tier Architecture**: Separate user and admin deployments with independent readiness logic
+- **Admin Always Ready**: Admin pods never fail readiness checks, preventing operational lockout
+- **Graceful Degradation**: User pods removed from load balancer during maintenance (no restarts)
+- **503 Error Handling**: Proper HTTP 503 responses with Retry-After headers
+- **ConfigMap-Based Toggle**: Simple `kubectl patch` to enable/disable maintenance
+- **Modern UI**: Clean, demo-ready interface with Kubernetes metrics
 
-## Prerequisitesc
+## Prerequisites
 
-- OpenShift CLI (`oc`) installed and configured
-- Docker and Docker Compose (for local testing)
+- **Minikube** installed (v1.30+)
+- **Docker** installed and running
+- **kubectl** configured
 - Python 3.11+ (for local development)
-- Access to an OpenShift cluster
 
 ## Architecture
 
 ```text
-┌────────────────────────────────────────────────────┐
-│                  OpenShift Cluster                 │
-├────────────────────────────────────────────────────┤
-│                                                    │
-│  ┌───────────────────┐      ┌──────────────────┐   │
-│  │   User Route      │      │   Admin Route    │   │
-│  │  (Public Access)  │      │ (Admin Access)   │   │
-│  └─────────┬─────────┘      └────────┬─────────┘   │
-│            │                         │             │
-│  ┌─────────▼─────────┐      ┌────────▼─────────┐   │
-│  │   User Service    │      │  Admin Service   │   │
-│  └─────────┬─────────┘      └────────┬─────────┘   │
-│            │                         │             │
-│  ┌─────────▼─────────┐      ┌────────▼─────────┐   │
-│  │  User Deployment  │      │ Admin Deployment │   │
-│  │  (2-10 replicas)  │      │   (1 replica)    │   │
-│  │  + HPA enabled    │      │                  │   │
-│  └─────────┬─────────┘      └────────┬─────────┘   │
-│            │                         │             │
-│            └──────────┬──────────────┘             │
-│                       │                            │
-│            ┌──────────▼──────────┐                 │
-│            │   ConfigMap         │                 │
-│            │   MAINTENANCE_MODE  │                 │
-│            └─────────────────────┘                 │
-└────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│              Kubernetes Cluster (Minikube)               │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌──────────────────┐         ┌───────────────────┐     │
+│  │  User Ingress    │         │  Admin Ingress    │     │
+│  │  (Public Access) │         │  (Admin Access)   │     │
+│  └────────┬─────────┘         └─────────┬─────────┘     │
+│           │                             │               │
+│  ┌────────▼──────────┐         ┌────────▼─────────┐     │
+│  │  User Service     │         │  Admin Service   │     │
+│  │  (ClusterIP)      │         │  (ClusterIP)     │     │
+│  └────────┬──────────┘         └────────┬─────────┘     │
+│           │                             │               │
+│  ┌────────▼──────────┐         ┌────────▼─────────┐     │
+│  │ User Deployment   │         │ Admin Deployment │     │
+│  │  (2 replicas)     │         │  (1 replica)     │     │
+│  │                   │         │                  │     │
+│  │ Readiness Logic:  │         │ Readiness Logic: │     │
+│  │ ✗ FAILS when      │         │ ✓ ALWAYS 200     │     │
+│  │   maintenance=true│         │   (guaranteed    │     │
+│  │ ✗ Removed from LB │         │    admin access) │     │
+│  └────────┬──────────┘         └────────┬─────────┘     │
+│           │                             │               │
+│           └──────────┬──────────────────┘               │
+│                      │                                  │
+│           ┌──────────▼──────────┐                       │
+│           │   ConfigMap         │                       │
+│           │   MAINTENANCE_MODE  │                       │
+│           │   (true/false)      │                       │
+│           └─────────────────────┘                       │
+└──────────────────────────────────────────────────────────┘
 ```
+
+**Critical Behavior During Maintenance:**
+
+- User pods: Readiness probe returns 503 → Kubernetes marks as "Not Ready" → Removed from Service endpoints
+- Admin pods: Readiness probe returns 200 → Always "Ready" → Always receives traffic
+- Result: Users see 503 error, admins can always access control panel to disable maintenance
 
 ## Quick Start
 
-### OpenShift Deployment
-
-OpenShift manifests are in `openshift/`. Apply them with `oc`:
+### 1. Start Minikube
 
 ```powershell
-oc apply -f openshift/namespace.yaml
-oc apply -f openshift/configmap.yaml
-oc apply -f openshift/deployment.yaml
-oc apply -f openshift/service.yaml
-oc apply -f openshift/route.yaml
-oc apply -f openshift/hpa.yaml
+minikube start --cpus=4 --memory=8192 --driver=docker
+minikube status
 ```
 
-### Local Testing with Docker
+### 2. Build and Deploy
 
-1. **Build and run normally:**
+```powershell
+# Build the Docker image in Minikube's Docker environment
+minikube docker-env | Invoke-Expression
+docker build -t sample-app:latest .
 
-   ```bash
-   docker-compose up
-   ```
+# Deploy to Kubernetes
+kubectl apply -f kubernetes/namespace.yaml
+kubectl apply -f kubernetes/configmap.yaml
+kubectl apply -f kubernetes/deployment.yaml
+kubectl apply -f kubernetes/service.yaml
+kubectl apply -f kubernetes/ingress.yaml
 
-   Access at <http://localhost:8888>
+# Wait for pods to be ready
+kubectl get pods -n sample-app -w
+```
 
-   Test probes:
+### 3. Access the Application
 
-   ```bash
-   curl http://localhost:8888/health   # Liveness: 200 OK
-   curl http://localhost:8888/ready    # Readiness: 200 OK
-   ```
+```powershell
+# Port-forward user service (will show maintenance page when enabled)
+kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
 
-2. **Test maintenance mode:**
+# Port-forward admin service (ALWAYS accessible)
+kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
+```
 
-   ```bash
-   docker-compose up web-maintenance
-   ```
+Access at:
 
-   Access at <http://localhost:8081> (will show 503)
+- **User endpoint**: <http://localhost:9090> (503 during maintenance)
+- **Admin endpoint**: <http://localhost:9092> (always accessible)
 
-   Test probes during maintenance:
+### 4. Toggle Maintenance Mode
 
-   ```bash
-   curl http://localhost:8081/health   # Liveness: 200 OK (still alive!)
-   curl http://localhost:8081/ready    # Readiness: 503 (not ready for traffic)
-   ```
+**Enable maintenance:**
 
-### Understanding Liveness vs Readiness Probes
+```powershell
+kubectl patch configmap app-config -n sample-app --type=json `
+  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "true"}]'
+kubectl rollout restart deployment -n sample-app
+```
 
-See [PROBES.md](docs/PROBES.md) for detailed explanation.
+**Observe the behavior:**
 
-**Quick Summary:**
+```powershell
+kubectl get pods -n sample-app
+# You'll see:
+# - Admin pods: 1/1 Ready (ALWAYS accessible)
+# - User pods: 0/1 Not Ready (removed from Service)
+```
 
-- **Liveness** (`/health`, `/healthz`): Is the container alive? (Restart if fails)
-- **Readiness** (`/ready`, `/readyz`): Can it serve traffic? (Remove from Service if fails)
+**Disable maintenance:**
 
-**During Maintenance:**
+```powershell
+kubectl patch configmap app-config -n sample-app --type=json `
+  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "false"}]'
+kubectl rollout restart deployment -n sample-app
+```
 
-- ✅ Liveness returns 200 (app is healthy, don't restart)
-- ❌ Readiness returns 503 (not ready for user traffic, remove from load balancer)
+## Understanding the Architecture
 
-### Deploy to OpenShift
+### Why Two Deployments?
 
-1. **Build and push the container image:**
+The key innovation is using **separate deployments with different readiness probe behaviors**:
 
-   ```bash
-   # Build the image
-   docker build -t demo-503:latest .
-   
-   # Tag for your registry
-   docker tag demo-503:latest <your-registry>/demo-503:latest
-   
-   # Push to registry
-   docker push <your-registry>/demo-503:latest
-   ```
+**User Deployment** (`sample-app-user`):
 
-2. **Update the image reference in `openshift/deployment.yaml`:**
+- Checks `MAINTENANCE_MODE` ConfigMap
+- Returns 503 from `/ready` when maintenance is enabled
+- Kubernetes marks pods as "Not Ready"
+- Pods are **removed from Service** (no traffic routed)
+- Pods stay **alive** (no restart, graceful degradation)
 
-   ```yaml
-   image: <your-registry>/demo-503:latest
-   ```
+**Admin Deployment** (`sample-app-admin`):
 
-3. **Deploy to OpenShift:**
+- Has `X-Admin-Access=true` environment variable
+- **Always returns 200** from `/ready` endpoint
+- Kubernetes keeps pods as "Ready"
+- Pods stay **in Service** (always receives traffic)
+- Guarantees admin access to disable maintenance
 
-   **Linux/macOS:**
+### Health Probes Explained
 
-   ```bash
-   chmod +x scripts/*.sh
-   ./scripts/deploy.sh
-   ```
+**Liveness Probe** (`/health`):
 
-   **Windows (PowerShell):**
+- Purpose: Is the container alive and functioning?
+- Both deployments: Always returns 200
+- If fails: Kubernetes **restarts** the container
+- During maintenance: Returns 200 (don't restart healthy pods)
+
+**Readiness Probe** (`/ready`):
+
+- Purpose: Can the pod serve traffic?
+- User pods: Returns 503 during maintenance
+- Admin pods: Always returns 200
+- If fails: Kubernetes **removes from Service** (no traffic)
+- During maintenance: User pods removed, admin pods stay
+
+### Preventing Admin Lockout
+
+**The Problem:** If all pods fail readiness checks, how do you disable maintenance mode?
+
+**The Solution:** Admin pods use separate readiness logic:
+
+```python
+def is_admin_access():
+    return os.environ.get('X-Admin-Access', '').lower() == 'true'
+
+@app.route('/ready')
+def ready():
+    if is_admin_access():
+        # Admin pods ALWAYS ready
+        return jsonify({"status": "ready", "pod_type": "admin"}), 200
+    
+    if is_maintenance_mode():
+        # User pods fail readiness during maintenance
+        return jsonify({"status": "not_ready", "reason": "maintenance"}), 503
+    
+    return jsonify({"status": "ready", "pod_type": "user"}), 200
+```
+
+This ensures **administrators can always reach the control panel** to disable maintenance.
+
+## Demo Script
+
+### Full Demo Flow
+
+1. **Show normal operation:**
 
    ```powershell
-   .\scripts\deploy.ps1
+   # Check pod status (all ready)
+   kubectl get pods -n sample-app
+   # Output: All pods 1/1 Ready
+   
+   # Access user endpoint
+   Start-Process http://localhost:9090  # Shows normal page
    ```
 
-4. **Get the route URLs:**
+2. **Enable maintenance mode:**
 
-   ```bash
-   oc get routes -n demo-503
+   ```powershell
+   kubectl patch configmap app-config -n sample-app --type=json `
+     -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "true"}]'
+   kubectl rollout restart deployment -n sample-app
+   Start-Sleep -Seconds 15
    ```
 
-## 🔧 Maintenance Mode Operations
+3. **Observe the critical behavior:**
 
-### Enable Maintenance Mode
+   ```powershell
+   kubectl get pods -n sample-app
+   # Output:
+   # sample-app-admin-xxx   1/1     Running   (ALWAYS READY)
+   # sample-app-user-xxx    0/1     Running   (NOT READY - removed from Service)
+   ```
 
-When you need to perform maintenance, enable maintenance mode to return 503 errors to regular users:
+4. **Verify traffic routing:**
 
-**Linux/macOS:**
+   ```powershell
+   # User endpoint - shows 503 maintenance page
+   Start-Process http://localhost:9090
+   
+   # Admin endpoint - STILL ACCESSIBLE
+   Start-Process http://localhost:9092  # Can disable maintenance from here!
+   ```
 
-```bash
-./scripts/enable-maintenance.sh
-```
+5. **Disable maintenance from admin panel:**
+   - Navigate to <http://localhost:9092>
+   - Use the control panel to disable maintenance
+   - Or use kubectl:
 
-**Windows (PowerShell):**
+   ```powershell
+   kubectl patch configmap app-config -n sample-app --type=json `
+     -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "false"}]'
+   kubectl rollout restart deployment -n sample-app
+   ```
 
-```powershell
-.\scripts\enable-maintenance.ps1
-```
+6. **Verify restoration:**
 
-**What happens:**
-
-- User route returns HTTP 503 with maintenance page
-- Admin route continues to work normally
-- User pods are restarted to pick up the configuration change
-
-### Disable Maintenance Mode
-
-After maintenance is complete, restore normal operation:
-
-**Linux/macOS:**
-
-```bash
-./scripts/disable-maintenance.sh
-```
-
-**Windows (PowerShell):**
-
-```powershell
-.\scripts\disable-maintenance.ps1
-```
-
-**What happens:**
-
-- User route returns to normal operation
-- All users can access the application again
-- User pods are restarted to pick up the configuration change
-
-### Manual Toggle
-
-You can also manually update the ConfigMap:
-
-```bash
-# Enable maintenance mode
-oc patch configmap app-config -n demo-503 -p '{"data":{"MAINTENANCE_MODE":"true"}}'
-
-# Disable maintenance mode
-oc patch configmap app-config -n demo-503 -p '{"data":{"MAINTENANCE_MODE":"false"}}'
-
-# Restart user pods to apply changes
-oc rollout restart deployment/demo-app-user -n demo-503
-```
-
-## Monitoring and Scaling
-
-### Check Pod Status
-
-```bash
-oc get pods -n demo-503
-```
-
-### View HPA Status
-
-```bash
-oc get hpa -n demo-503
-```
-
-### Watch Pod Scaling
-
-```bash
-oc get hpa demo-app-user-hpa -n demo-503 --watch
-```
-
-### View Logs
-
-```bash
-# User pods
-oc logs -f deployment/demo-app-user -n demo-503
-
-# Admin pods
-oc logs -f deployment/demo-app-admin -n demo-503
-```
-
-## Testing
-
-### Test User Route (Normal)
-
-```bash
-curl -i https://demo-app-user-demo-503.apps.your-cluster.com
-# Should return 200 OK
-```
-
-### Test User Route (Maintenance)
-
-```bash
-# After enabling maintenance mode
-curl -i https://demo-app-user-demo-503.apps.your-cluster.com
-# Should return 503 Service Unavailable
-```
-
-### Test Admin Route
-
-```bash
-curl -i https://admin-demo-503.apps.your-cluster.com/admin
-# Should always return 200 OK
-```
-
-### Health Endpoints
-
-```bash
-# Health check
-curl https://demo-app-user-demo-503.apps.your-cluster.com/health
-
-# Readiness check
-curl https://demo-app-user-demo-503.apps.your-cluster.com/ready
-```
+   ```powershell
+   kubectl get pods -n sample-app
+   # Output: All pods back to 1/1 Ready
+   
+   Start-Process http://localhost:9090  # Shows normal page again
+   ```
 
 ## Project Structure
 
 ```text
 openshift-maintenance-demo/
-├── app.py                          # Flask application
+├── app.py                          # Flask application with dual readiness logic
 ├── requirements.txt                # Python dependencies
 ├── pyproject.toml                  # Python project config + linting
 ├── Dockerfile                      # Container image
-├── docker-compose.yml              # Local testing
-├── .gitignore                      # Git ignore patterns
-├── .markdownlint.json              # Markdown linting rules
-├── .pre-commit-config.yaml         # Pre-commit hooks
 ├── README.md                       # Main documentation
 ├── CONTRIBUTING.md                 # Developer guidelines
-├── docs/                           # Documentation
-│   └── MAINTENANCE_DEMO.md         # Single-source demo guide
-├── deploy/                         # (Deprecated) local/kind helpers
-│   ├── kind-cluster.yaml           # Deprecated
-│   ├── local-deploy.sh             # Deprecated
-│   └── local-deploy.ps1            # Deprecated
-├── openshift/                      # OpenShift manifests
+├── docs/
+│   └── MAINTENANCE_DEMO.md         # Detailed architecture guide
+├── kubernetes/                     # Kubernetes manifests (Minikube)
 │   ├── namespace.yaml
 │   ├── configmap.yaml
-│   ├── deployment.yaml
+│   ├── deployment.yaml             # User + Admin deployments
 │   ├── service.yaml
-│   ├── route.yaml
-│   └── hpa.yaml
-├── scripts/                        # Maintenance scripts
-│   ├── deploy.sh / deploy.ps1
-│   ├── enable-maintenance.sh / .ps1
-│   └── disable-maintenance.sh / .ps1
-└── .github/
-    ├── workflows/
-    │   └── lint.yml                # CI/CD linting
-    └── copilot-instructions.md
+│   └── ingress.yaml
+└── scripts/
+    └── runme.ps1                   # Quick start script
 ```
-
-## Key Concepts
-
-### ConfigMap-Based Configuration
-
-The maintenance mode is controlled by a ConfigMap (`app-config`) that stores the
-`MAINTENANCE_MODE` environment variable. This allows dynamic configuration changes
-without rebuilding container images.
-
-### Separate Deployments
-
-Two separate deployments run the same container image:
-
-- **User Deployment**: Reads `MAINTENANCE_MODE` from ConfigMap, scales 2-10 pods
-- **Admin Deployment**: Always has `MAINTENANCE_MODE=false`, runs 1 pod
-
-### 503 Response
-
-When maintenance mode is enabled, the user deployment returns HTTP 503 (Service Unavailable)
-with a maintenance page. This is the correct HTTP status code for temporary service interruptions.
-
-### Horizontal Pod Autoscaling
-
-The user deployment uses HPA to automatically scale between 2-10 pods based on:
-
-- CPU utilization (target: 70%)
-- Memory utilization (target: 80%)
 
 ## Development
 
-### Code Quality Tools
+### Local Testing
 
-This project uses modern Python and Markdown linting tools:
+```powershell
+# Install dependencies
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 
-**Python:**
+# Run locally
+$env:MAINTENANCE_MODE="false"
+python app.py
 
-- **Ruff** - Fast all-in-one linter and formatter (replaces flake8, black, isort, etc.)
-- **mypy** - Static type checking
-
-**Markdown:**
-
-- **markdownlint** - Markdown style and syntax checking
-
-**Setup:**
-
-```bash
-# Install development tools
-pip install ruff mypy pre-commit
-
-# Install pre-commit hooks (runs automatically on git commit)
-pre-commit install
-
-# Run linting manually
-ruff check .          # Check Python code
-ruff format .         # Format Python code
-mypy app.py           # Type check Python
-markdownlint '**/*.md' --fix  # Fix Markdown
+# Test maintenance mode
+$env:MAINTENANCE_MODE="true"
+$env:X_ADMIN_ACCESS="true"  # Simulate admin pod
+python app.py
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed development guidelines.
+### Code Quality
 
-## Customization
+```powershell
+# Install dev tools
+pip install ruff mypy pre-commit
 
-### Change Maintenance Page
+# Run linting
+ruff check .
+ruff format .
+mypy app.py
+```
 
-Edit the `MAINTENANCE_PAGE` template in `app.py` to customize the maintenance message.
+## Troubleshooting
 
-### Adjust Scaling Parameters
+### Pods Not Ready After Maintenance Toggle
 
-Modify `openshift/hpa.yaml` to change:
+```powershell
+# Check pod status
+kubectl get pods -n sample-app
 
-- Min/max replicas
-- CPU/memory thresholds
-- Scale up/down behavior
+# Check pod logs
+kubectl logs -n sample-app deployment/sample-app-user
+kubectl logs -n sample-app deployment/sample-app-admin
 
-### Add Authentication
+# Verify ConfigMap
+kubectl get configmap app-config -n sample-app -o yaml
+```
 
-Enhance the admin route with proper authentication by modifying `app.py`
-to check headers, tokens, or integrate with OpenShift OAuth.
+### Port-Forward Connection Issues
 
-## Notes
+```powershell
+# Kill existing port-forwards
+Get-Process kubectl | Stop-Process
 
-- The admin deployment intentionally ignores the maintenance mode ConfigMap to ensure administrative access is always available
-- Pod restarts are required after ConfigMap changes because environment variables are set at pod creation time
-- The HPA requires the Metrics Server to be installed in your OpenShift cluster
-- Update the route hostnames in `openshift/route.yaml` to match your cluster domain
+# Restart port-forwards
+kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
+kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
+```
+
+### Minikube Issues
+
+```powershell
+# Check Minikube status
+minikube status
+
+# Restart Minikube
+minikube stop
+minikube start --cpus=4 --memory=8192 --driver=docker
+
+# Rebuild image in Minikube
+minikube docker-env | Invoke-Expression
+docker build -t sample-app:latest .
+```
+
+## Key Takeaways
+
+1. **Admin Always Accessible**: Separate deployments with different readiness logic ensure admins can always disable maintenance
+2. **Graceful Degradation**: User pods removed from Service (not restarted) during maintenance
+3. **Clear HTTP Semantics**: 503 for maintenance, 200 for admin access
+4. **ConfigMap-Based Toggle**: Simple `kubectl patch` to enable/disable maintenance
+5. **Pod Status Verification**: `kubectl get pods` shows the architecture working (admin 1/1, user 0/1)
+
+## Further Reading
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines and contribution workflow.
+
+---
+
+**Note**: This is a demonstration project for educational purposes.
 
 ## Contributing
 

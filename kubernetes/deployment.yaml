@@ -21,7 +21,7 @@ spec:
       containers:
       - name: app
         image: sample-app:latest
-        imagePullPolicy: Always
+        imagePullPolicy: Never  # Use local image
         ports:
         - containerPort: 8080
           protocol: TCP
@@ -38,27 +38,17 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "500m"
-        
-        # Liveness Probe - "Is the container alive?"
-        # Common names: /health, /healthz, /livez, /alive
-        # If fails: Container is RESTARTED by Kubernetes
-        # Should only fail for: deadlocks, crashes, unrecoverable errors
         livenessProbe:
           httpGet:
-            path: /health   # or /healthz (Kubernetes convention)
+            path: /health
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 3
-        
-        # Readiness Probe - "Can the container serve traffic?"
-        # Common names: /ready, /readyz, /healthz/ready
-        # If fails: Pod REMOVED from Service endpoints (no restart)
-        # Should fail for: maintenance mode, dependencies unavailable, warming up
         readinessProbe:
           httpGet:
-            path: /ready    # or /readyz (Kubernetes convention)
+            path: /ready
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5
@@ -88,13 +78,13 @@ spec:
       containers:
       - name: app
         image: sample-app:latest
-        imagePullPolicy: Always
+        imagePullPolicy: Never  # Use local image
         ports:
         - containerPort: 8080
           protocol: TCP
         env:
         - name: MAINTENANCE_MODE
-          value: "false"  # Admin always has access
+          value: "false"
         - name: X-Admin-Access
           value: "true"
         resources:
@@ -104,24 +94,17 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "500m"
-        
-        # Liveness Probe - "Is the container alive?"
-        # If fails: Container is RESTARTED
         livenessProbe:
           httpGet:
-            path: /health   # or /healthz
+            path: /health
             port: 8080
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 3
-        
-        # Readiness Probe - "Can the container serve traffic?"
-        # If fails: Pod REMOVED from Service (no restart)
-        # Admin pods remain ready even during maintenance
         readinessProbe:
           httpGet:
-            path: /ready    # or /readyz
+            path: /ready
             port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5

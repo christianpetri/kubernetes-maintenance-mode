@@ -1,248 +1,306 @@
-# Maintenance Mode Demo (Tomcat + OpenShift)
+# Kubernetes Maintenance Mode Demo
 
-A concise, copy-paste-ready guide to demonstrate application maintenance mode
-with proper 503 behavior for users while keeping admin access available for
-operations.
+A practical guide demonstrating maintenance mode implementation with proper 503 behavior
+while **guaranteeing admin access remains available**.
 
-## Contents
+## Critical Architecture Pattern
 
-- Overview
-- Tomcat Standalone Demo
-- OpenShift Manifests
-- One-Minute Demo Script
-- Lessons Learned
+**The Problem**: How do you disable maintenance mode if readiness checks prevent all pods from receiving traffic?
 
----
+**The Solution**: Separate deployments with different readiness probe behaviors:
 
-## Overview
+- **User Pods**: Return 503 from `/ready` during maintenance → Removed from Service
+- **Admin Pods**: Always return 200 from `/ready` → Stay in Service (always accessible)
 
-- User requests receive HTTP 503 during maintenance (with `Retry-After`).
-- Liveness stays 200 (don’t restart pods just because we’re in maintenance).
-- Admin path remains available, bypassing readiness draining.
-- Maintenance state is shared across workers/pods via a simple flag.
+This pattern ensures **administrators can always access the control panel** to disable maintenance mode.
 
 ---
 
-## Tomcat Standalone Demo (localhost)
+## Quick Start (Minikube)
 
-### MaintenanceFilter.java
+### Prerequisites
 
-```java
-// src/main/java/com/example/filter/MaintenanceFilter.java
-package com.example.filter;
+```powershell
+# Install Minikube and kubectl
+winget install Kubernetes.minikube
+winget install Kubernetes.kubectl
 
-import jakarta.servlet.*;
-import jakarta.servlet.http.HttpServletResponse;
-import java.io.File;
-import java.io.IOException;
-
-public class MaintenanceFilter implements Filter {
-    private static final String MAINTENANCE_FLAG = "/tmp/maint.on";
-    private static final String ADMIN_PATH = "/admin";
-
-    @Override
-    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
-            throws IOException, ServletException {
-        HttpServletResponse response = (HttpServletResponse) res;
-        String uri = ((jakarta.servlet.http.HttpServletRequest) req).getRequestURI();
-
-        if (new File(MAINTENANCE_FLAG).exists() && !uri.startsWith(ADMIN_PATH)) {
-            response.setStatus(503);
-            response.setHeader("Retry-After", "120");
-            response.setContentType("application/json");
-            response.getWriter().write("{\"error\": \"Service in maintenance mode\"}");
-            return;
-        }
-        chain.doFilter(req, res);
-    }
-}
+# Start Minikube
+minikube start --cpus=4 --memory=8192 --driver=docker
 ```
 
-### web.xml (add to WEB-INF)
+### Deploy the Application
 
-```xml
-<filter>
-    <filter-name>MaintenanceFilter</filter-name>
-    <filter-class>com.example.filter.MaintenanceFilter</filter-class>
-</filter>
-<filter-mapping>
-    <filter-name>MaintenanceFilter</filter-name>
-    <url-pattern>/*</url-pattern>
-</filter-mapping>
+```powershell
+# Build image in Minikube's Docker
+minikube docker-env | Invoke-Expression
+docker build -t sample-app:latest .
+
+# Deploy to Kubernetes
+kubectl apply -f kubernetes/namespace.yaml
+kubectl apply -f kubernetes/configmap.yaml
+kubectl apply -f kubernetes/deployment.yaml
+kubectl apply -f kubernetes/service.yaml
+
+# Wait for pods
+kubectl get pods -n sample-app -w
 ```
 
-### maintenance.html (static fallback)
+### Access the Application
 
-```html
-<!-- src/main/webapp/maintenance.html -->
-<!DOCTYPE html>
-<html>
-<head><title>Maintenance</title></head>
-<body style="font-family: sans-serif; text-align: center; margin-top: 100px;">
-  <h1>The application is in maintenance mode</h1>
-  <p>Please come back later.</p>
-</body>
-</html>
+```powershell
+# Terminal 1: User service (blocked during maintenance)
+kubectl port-forward -n sample-app svc/sample-app-user 9090:8080
+
+# Terminal 2: Admin service (ALWAYS accessible)
+kubectl port-forward -n sample-app svc/sample-app-admin 9092:8080
 ```
 
-### How to Run (Terminal)
-
-```bash
-mvn clean package
-# Start Tomcat, then:
-touch /tmp/maint.on
-curl http://localhost:8080/api/status          # → 503 + JSON
-curl http://localhost:8080/admin/status        # → 200 + normal response
-```
+- User endpoint: <http://localhost:9090>
+- Admin endpoint: <http://localhost:9092>
 
 ---
 
-## OpenShift Manifests
+## Demo Flow
 
-### openshift/deployment.yaml
+### 1. Enable Maintenance Mode
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sample-app
-spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: sample-app
-  template:
-    metadata:
-      labels:
-        app: sample-app
-    spec:
-      containers:
-      - name: app
-        image: your-registry/sample-app:latest
-        ports:
-        - containerPort: 8080
-        readinessProbe:
-          httpGet:
-            path: /system/status
-            port: 8080
-          initialDelaySeconds: 30
-          periodSeconds: 10
-        livenessProbe:
-          httpGet:
-            path: /ping
-            port: 8080
-          initialDelaySeconds: 120
+```powershell
+kubectl patch configmap app-config -n sample-app --type=json `
+  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "true"}]'
+kubectl rollout restart deployment -n sample-app
+Start-Sleep -Seconds 15
 ```
 
-### openshift/service.yaml
+### 2. Verify Pod Status
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: sample-app-service
-spec:
-  selector:
-    app: sample-app
-  ports:
-    - port: 80
-      targetPort: 8080
+```powershell
+kubectl get pods -n sample-app
 ```
 
-### openshift/route-normal.yaml
+**Expected output:**
 
-```yaml
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: sample-app-normal
-spec:
-  host: example.com
-  to:
-    kind: Service
-    name: sample-app-service
-  port:
-    targetPort: 8080
-  # Honors readiness → 503 = drained
+```text
+NAME                                READY   STATUS    RESTARTS   AGE
+sample-app-admin-xxx                1/1     Running   0          20s
+sample-app-user-yyy                 0/1     Running   0          20s
 ```
 
-### openshift/route-admin.yaml (bypass readiness)
+**Critical observation:**
 
-```yaml
-apiVersion: route.openshift.io/v1
-kind: Route
-metadata:
-  name: sample-app-admin
-spec:
-  host: admin.example.com
-  to:
-    kind: Service
-    name: sample-app-service
-  port:
-    targetPort: 8080
-  # Ignores readiness → always reachable
-  tls:
-    termination: edge
+- Admin pod: **1/1 Ready** (stays in Service, always accessible)
+- User pod: **0/1 Not Ready** (removed from Service, no user traffic)
+
+### 3. Test Access
+
+```powershell
+# User endpoint - Returns 503
+Invoke-WebRequest http://localhost:9090 -UseBasicParsing
+# Status: 503 Service Unavailable
+
+# Admin endpoint - STILL WORKS
+Invoke-WebRequest http://localhost:9092 -UseBasicParsing
+# Status: 200 OK (can disable maintenance from here!)
+```
+
+### 4. Disable Maintenance
+
+From admin panel at <http://localhost:9092>, or via kubectl:
+
+```powershell
+kubectl patch configmap app-config -n sample-app --type=json `
+  -p '[{"op": "replace", "path": "/data/MAINTENANCE_MODE", "value": "false"}]'
+kubectl rollout restart deployment -n sample-app
 ```
 
 ---
 
-## One-Minute Demo Script
+## Architecture Details
 
-```bash
-# 1. Deploy (from repo root)
-oc apply -f openshift/deployment.yaml,openshift/service.yaml,openshift/route-normal.yaml,openshift/route-admin.yaml
+### Application Code (app.py)
 
-# 2. Enter maintenance mode
-oc exec deploy/sample-app -- touch /tmp/maint.on
+```python
+def is_admin_access():
+    """Check if this pod has admin privileges"""
+    return os.environ.get('X-Admin-Access', '').lower() == 'true'
 
-# 3. Test
-curl -H "Host: example.com" http://$(oc get route sample-app-normal -o jsonpath='{.spec.host}')
-# → 503
+def is_maintenance_mode():
+    """Check if maintenance mode is enabled"""
+    return os.environ.get('MAINTENANCE_MODE', 'false').lower() == 'true'
 
-curl -H "Host: admin.example.com" http://$(oc get route sample-app-admin -o jsonpath='{.spec.host}')/admin/status
-# → 200 + full access
+@app.route('/ready')
+def ready():
+    """Readiness probe - determines if pod receives traffic"""
+    if is_admin_access():
+        # Admin pods ALWAYS ready (guaranteed access)
+        return jsonify({"status": "ready", "pod_type": "admin"}), 200
+    
+    if is_maintenance_mode():
+        # User pods fail readiness during maintenance
+        return jsonify({"status": "not_ready", "reason": "maintenance"}), 503
+    
+    return jsonify({"status": "ready", "pod_type": "user"}), 200
+
+@app.route('/health')
+def health():
+    """Liveness probe - always returns 200 (don't restart healthy pods)"""
+    return jsonify({"status": "healthy"}), 200
+```
+
+### Kubernetes Deployments
+
+**User Deployment:**
+
+```yaml
+env:
+- name: MAINTENANCE_MODE
+  valueFrom:
+    configMapKeyRef:
+      name: app-config
+      key: MAINTENANCE_MODE
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  # Returns 503 when MAINTENANCE_MODE=true
+  # Pod marked "Not Ready" → Removed from Service
+```
+
+**Admin Deployment:**
+
+```yaml
+env:
+- name: X-Admin-Access
+  value: "true"
+- name: MAINTENANCE_MODE
+  value: "false"  # Ignored by admin readiness logic
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  # ALWAYS returns 200 (admin check bypasses maintenance)
+  # Pod stays "Ready" → Always in Service
+```
+
+---
+
+## Key Concepts
+
+### Readiness vs Liveness Probes
+
+| Probe Type | Endpoint | Purpose | Failure Action | During Maintenance |
+|------------|----------|---------|----------------|-------------------|
+| **Liveness** | `/health` | Is container alive? | **Restart** pod | ✅ Returns 200 |
+| **Readiness** | `/ready` | Can serve traffic? | **Remove** from Service | User: ❌ 503, Admin: ✅ 200 |
+
+**Critical difference:**
+
+- Liveness failure → Pod dies and restarts
+- Readiness failure → Pod stays alive but removed from load balancer
+
+### Why This Pattern Works
+
+1. **Graceful Degradation**: User pods stay running (no restart) but don't receive traffic
+2. **Admin Always Accessible**: Admin pods stay in Service, can always reach control panel
+3. **No Operational Lockout**: Even during maintenance, admins can disable it
+4. **Clear Status**: `kubectl get pods` shows readiness state (1/1 vs 0/1)
+
+---
+
+## Troubleshooting
+
+### Admin Pods Not Accessible
+
+```powershell
+# Check admin pod has correct env var
+kubectl get pod -n sample-app -l app=sample-app,tier=admin -o yaml | Select-String -Pattern "X-Admin-Access"
+
+# Should output: value: "true"
+```
+
+### User Pods Not Failing Readiness
+
+```powershell
+# Check ConfigMap
+kubectl get configmap app-config -n sample-app -o yaml
+
+# Verify MAINTENANCE_MODE: "true"
+```
+
+### Pods Not Restarting After ConfigMap Change
+
+```powershell
+# ConfigMap changes require pod restart
+kubectl rollout restart deployment -n sample-app
+
+# Watch rollout progress
+kubectl rollout status deployment sample-app-user -n sample-app
+kubectl rollout status deployment sample-app-admin -n sample-app
+```
+
+---
+
+## Cleanup
+
+```powershell
+# Delete namespace (removes everything)
+kubectl delete namespace sample-app
+
+# Stop Minikube
+minikube stop
 ```
 
 ---
 
 ## Lessons Learned
 
-- Readiness vs user 503: Keep liveness 200, return 503 on user paths during maintenance.
-- Admin access: Provide a separate route that bypasses readiness, so ops stays reachable.
-- Shared maintenance flag: Use a file or ConfigMap so all pods agree on state.
-- Split vs single Service: Split routes keep admin accessible without impacting user draining.
-- Headers matter: Include `Retry-After` to communicate expected back-in-service window.
+1. **Separate Deployments**: Critical for different readiness behaviors
+2. **Environment Variables**: Use to distinguish pod types (admin vs user)
+3. **Readiness ≠ Liveness**: Readiness removes from Service, liveness restarts pod
+4. **ConfigMap Pattern**: Easy to toggle maintenance without code changes
+5. **Graceful Degradation**: Pods stay alive during maintenance (no restart)
+6. **Operational Safety**: Admin access guaranteed even during maintenance
 
 ---
 
-## Quick Start (Windows PowerShell)
+## Real-World Considerations
 
-- Build and run in Docker (default port 8080):
+### Production Enhancements
 
-```powershell
-.\scripts
-unme.ps1 -Mode docker -Build -Start -Port 8080
+1. **Authentication**: Add proper auth to admin endpoints (OAuth, API keys)
+2. **Monitoring**: Alert when pods are in Not Ready state for extended periods
+3. **Logging**: Log maintenance mode changes for audit trail
+4. **Database Maintenance**: Coordinate with database read-only mode
+5. **External Dependencies**: Consider upstream/downstream service impacts
+
+### Scaling Patterns
+
+```yaml
+# Add HPA for user deployment
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sample-app-user-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sample-app-user
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
 ```
 
-- Enable/disable maintenance in the running container:
+---
 
-```powershell
-.\scripts
-unme.ps1 -Mode docker -EnableMaintenance
-.\scripts
-unme.ps1 -Mode docker -DisableMaintenance
-```
+## References
 
-- Deploy natively to an existing Tomcat (set `TOMCAT_HOME` first):
-
-```powershell
-$env:TOMCAT_HOME="C:\\apache-tomcat-10.1.x"
-.\scripts
-unme.ps1 -Mode native -Build -Start -Port 8080
-```
-
-Notes:
-
-- Native maintenance flag lives at `C:\tmp\maint.on`.
-- Docker maintenance flag lives at `/tmp/maint.on` inside the container.
+- [Kubernetes Probes Documentation](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/)
+- [HTTP 503 Service Unavailable](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/503)
+- [Graceful Shutdown in Kubernetes](https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle/)
