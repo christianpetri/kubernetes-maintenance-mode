@@ -6,10 +6,15 @@ OPS Responsibility: Use Kubernetes readiness probes to control traffic routing
 
 Core Pattern:
   1. ConfigMap holds maintenance flag
-  2. App reads flag from /config/maintenance (mounted volume)
-  3. Readiness probe (/ready) returns 503 if flag exists
-  4. Kubernetes removes unhealthy pods from Service
-  5. Admin pods always healthy (ADMIN_ACCESS=true env var)
+  2. App reads flag from /config/maintenance (mounted as volume)
+  3. Readiness probe (/ready) returns 503 if maintenance enabled
+  4. Kubernetes removes unready pods from Service endpoints
+  5. Admin pods always return 200 (ADMIN_ACCESS=true env var)
+
+Demo Enhancement:
+  - Optional Redis for shared state (demo mode only)
+  - Shows real-time sync across pods during presentations
+  - Production still uses ConfigMap (proper Kubernetes pattern)
 """
 
 import os
@@ -24,9 +29,48 @@ MAINTENANCE_FILE = Path(os.getenv("MAINTENANCE_FILE", "/config/maintenance"))
 IS_ADMIN_POD = os.getenv("ADMIN_ACCESS", "").lower() == "true"
 POD_NAME = os.getenv("HOSTNAME", "local")
 
+# Redis for demo mode (optional - shows real-time sync)
+REDIS_HOST = os.getenv("REDIS_HOST", "redis")
+# Handle Kubernetes service discovery env vars (REDIS_SERVICE_PORT) or explicit REDIS_PORT
+redis_port_str = os.getenv("REDIS_PORT", "6379")
+# If it contains "tcp://", extract just the port number
+if "tcp://" in redis_port_str:
+    redis_port_str = "6379"  # Use default port when K8s injects service URL
+REDIS_PORT = int(redis_port_str)
+redis_client = None
+
+try:
+    import redis
+
+    redis_client = redis.Redis(
+        host=REDIS_HOST, port=REDIS_PORT, decode_responses=True, socket_connect_timeout=2
+    )
+    redis_client.ping()
+    print(f"[REDIS] Connected for demo state sync at {REDIS_HOST}:{REDIS_PORT}")
+except Exception as e:
+    print(f"[REDIS] Not available (demo mode will be per-pod): {e}")
+    redis_client = None
+
 
 def is_maintenance_mode() -> bool:
-    """Check if maintenance mode is enabled via ConfigMap file."""
+    """
+    Check if maintenance mode is enabled.
+    
+    Priority order:
+    1. Redis shared state (demo mode - cross-pod sync)
+    2. Local file flag (single pod testing)
+    3. ConfigMap file (production pattern)
+    """
+    # Demo mode: Check Redis for shared state (instant cross-pod sync)
+    if redis_client:
+        try:
+            redis_state = redis_client.get("maintenance_mode")
+            if redis_state is not None:
+                return redis_state.lower() == "true"
+        except Exception:
+            pass
+    
+    # Production: Check ConfigMap file mount (or local file for testing)
     if not MAINTENANCE_FILE.exists():
         return False
     try:
@@ -42,13 +86,30 @@ def check_maintenance():
 
     Intercepts ALL requests before routing.
     - Health/readiness checks: pass through
-    - Admin routes: pass through
+    - Admin routes: only accessible from admin pods
     - User routes: return 503 if maintenance mode
     """
-    # Allow health checks and admin routes
+    # Allow health checks
     if request.path in ["/health", "/healthz", "/ready", "/readyz"]:
         return None
+    
+    # Admin routes only accessible from admin pods
     if request.path.startswith("/admin"):
+        if not IS_ADMIN_POD:
+            return (
+                render_template_string(
+                    """
+                    <!DOCTYPE html>
+                    <html><head><title>403 Forbidden</title></head>
+                    <body style="font-family: sans-serif; text-align: center; padding: 50px;">
+                        <h1>403 Forbidden</h1>
+                        <p>Admin routes are only accessible from admin pods.</p>
+                        <p>Access via the admin service endpoint.</p>
+                    </body></html>
+                    """
+                ),
+                403,
+            )
         return None
 
     # Block user routes during maintenance
@@ -88,11 +149,16 @@ def toggle_maintenance():
     """
     Toggle maintenance mode.
 
-    DEMO MODE (Local Development):
+    DEMO MODE (With Redis):
+      - Toggles shared state in Redis
+      - ALL PODS see the change instantly
+      - Perfect for live demonstrations
+      - Shows real-time drain behavior
+
+    DEMO MODE (Without Redis):
       - Toggles file flag on THIS POD ONLY
-      - Works for single-pod demos and testing
+      - Works for single-pod testing
       - Each pod has separate filesystem (no sync)
-      - Useful for showing the UI/UX flow
 
     PRODUCTION (Kubernetes):
       - DO NOT use this button!
@@ -108,12 +174,26 @@ def toggle_maintenance():
     """
     try:
         current = is_maintenance_mode()
+        new_state = "false" if current else "true"
+        
+        # Demo mode: Use Redis for shared state (syncs across pods)
+        if redis_client:
+            redis_client.set("maintenance_mode", new_state)
+            return {
+                "success": True,
+                "maintenance": not current,
+                "mode": "redis",
+                "note": "Redis state updated - all pods will sync instantly!",
+            }
+        
+        # Fallback: Local file (single pod only)
         MAINTENANCE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        MAINTENANCE_FILE.write_text("false" if current else "true")
+        MAINTENANCE_FILE.write_text(new_state)
         return {
             "success": True,
             "maintenance": not current,
-            "note": "Demo mode - affects this pod only. Production: use kubectl.",
+            "mode": "file",
+            "note": "Local file updated - affects this pod only.",
         }
     except Exception as e:
         return {"success": False, "error": str(e)}, 500
@@ -218,9 +298,52 @@ INDEX_TEMPLATE = """
             border-radius: 4px;
             font-family: 'Monaco', monospace;
         }
+        .maintenance-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            background: #f59e0b;
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: none;
+            animation: slideDown 0.5s ease-out;
+        }
+        .maintenance-banner.show {
+            display: block;
+        }
+        .maintenance-banner h2 {
+            margin: 0 0 10px 0;
+            color: white;
+        }
+        .maintenance-banner p {
+            margin: 5px 0;
+        }
+        .maintenance-banner .countdown {
+            font-size: 24px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        @keyframes slideDown {
+            from {
+                transform: translateY(-100%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
     </style>
 </head>
 <body>
+    <div class="maintenance-banner" id="maintenanceBanner">
+        <h2>⚠️ Maintenance Mode Starting</h2>
+        <p>Please save your work. You will be logged out in:</p>
+        <div class="countdown" id="countdown">30</div>
+        <p><small>Redirecting to maintenance page...</small></p>
+    </div>
     <div class="card">
         <h1>🚀 Kubernetes Maintenance Mode Demo</h1>
 
@@ -243,7 +366,7 @@ INDEX_TEMPLATE = """
         <h3>Demo Mode (Quick Test)</h3>
         <p style="background: #fffaf0; padding: 12px; border-radius: 6px; border-left: 4px solid #ed8936;">
             Click the button in admin panel to see the UI flow.<br>
-            <small><em>Note: Affects this pod only (for demonstration purposes)</em></small>
+            <small><em>With Redis: Syncs across all pods instantly | Without Redis: Affects this pod only</em></small>
         </p>
 
         <h3>Production Mode (Kubernetes)</h3>
@@ -256,6 +379,45 @@ kubectl rollout restart deployment/sample-app-user -n sample-app</pre>
 
         <p>Then watch this page return 503 while admin stays accessible! ✨</p>
     </div>
+
+    <script>
+        let countdownTimer;
+        let secondsLeft = 30;
+
+        // Check maintenance status every 3 seconds
+        setInterval(async () => {
+            try {
+                const response = await fetch('/ready');
+                const data = await response.json();
+                
+                // If maintenance mode detected, show banner and start countdown
+                if (data.status === 'not_ready' && data.reason === 'maintenance_mode') {
+                    showMaintenanceBanner();
+                }
+            } catch (error) {
+                console.log('Status check failed:', error);
+            }
+        }, 3000);
+
+        function showMaintenanceBanner() {
+            const banner = document.getElementById('maintenanceBanner');
+            if (banner.classList.contains('show')) return; // Already showing
+            
+            banner.classList.add('show');
+            
+            // Start countdown
+            countdownTimer = setInterval(() => {
+                secondsLeft--;
+                document.getElementById('countdown').textContent = secondsLeft;
+                
+                if (secondsLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    // Redirect to trigger maintenance page
+                    window.location.reload();
+                }
+            }, 1000);
+        }
+    </script>
 </body>
 </html>
 """
@@ -377,8 +539,9 @@ ADMIN_TEMPLATE = """
 
         <div class="warning">
             <strong>💡 Demo vs Production</strong><br>
-            <strong>DEMO MODE:</strong> Button toggles file on THIS pod only (for UI demonstration)<br>
-            <strong>PRODUCTION:</strong> Use kubectl to update ConfigMap (affects all pods)
+            <strong>DEMO MODE (with Redis):</strong> Button syncs across ALL pods instantly (best for live demos)<br>
+            <strong>DEMO MODE (without Redis):</strong> Button affects THIS pod only<br>
+            <strong>PRODUCTION:</strong> Use kubectl to update ConfigMap (proper Kubernetes pattern)
         </div>
 
         <button onclick="toggleMaintenance()" id="toggleBtn">

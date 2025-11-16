@@ -89,10 +89,10 @@ This demo teaches practical Kubernetes patterns for production operations:
 ## Architecture
 
 ```text
-┌──────────────────────────────────────────────────────────┐
-│              Kubernetes Cluster (Minikube)               │
-├──────────────────────────────────────────────────────────┤
-│                                                          │
+┌─────────────────────────────────────────────────────────┐
+│              Kubernetes Cluster (Minikube)              │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
 │  ┌──────────────────┐         ┌───────────────────┐     │
 │  │  User Ingress    │         │  Admin Ingress    │     │
 │  │  (Public Access) │         │  (Admin Access)   │     │
@@ -108,9 +108,10 @@ This demo teaches practical Kubernetes patterns for production operations:
 │  │  (2 replicas)     │         │  (1 replica)     │     │
 │  │                   │         │                  │     │
 │  │ Readiness Logic:  │         │ Readiness Logic: │     │
-│  │ ✗ FAILS when      │         │ ✓ ALWAYS 200     │     │
+│  │ • Returns 503 if  │         │ ✓ ALWAYS 200     │     │
 │  │   maintenance=true│         │   (guaranteed    │     │
-│  │ ✗ Removed from LB │         │    admin access) │     │
+│  │ • Removed from    │         │    admin access) │     │
+│  │   Service by K8s  │         │                  │     │
 │  └────────┬──────────┘         └────────┬─────────┘     │
 │           │                             │               │
 │           └──────────┬──────────────────┘               │
@@ -120,7 +121,7 @@ This demo teaches practical Kubernetes patterns for production operations:
 │           │   MAINTENANCE_MODE  │                       │
 │           │   (true/false)      │                       │
 │           └─────────────────────┘                       │
-└──────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────┘
 ```
 
 **Critical Behavior During Maintenance:**
@@ -150,7 +151,7 @@ This will:
 
 - Start Minikube cluster (Docker driver, 4 CPUs, 8GB RAM)
 - Build the Flask application Docker image
-- Deploy user and admin services to Kubernetes
+- Deploy user, admin, and Redis services to Kubernetes
 - Wait for all pods to be ready
 
 ### 3. Access the Application

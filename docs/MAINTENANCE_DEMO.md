@@ -27,7 +27,7 @@ def check_maintenance():
     if is_maintenance_mode():
         response = app.make_response(render_template_string(MAINTENANCE_PAGE))
         response.status_code = 503
-        response.headers["Retry-After"] = "1800"
+        response.headers["Retry-After"] = "300"  # 5 minutes
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         return response
 ```

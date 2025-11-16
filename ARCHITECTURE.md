@@ -9,7 +9,7 @@
 
 ## Action Map
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                         DEV LAYER                                │
 │                   (Application Logic)                            │
@@ -83,7 +83,7 @@
 
 ## Flow: Enable Maintenance Mode
 
-```
+```text
 OPS ACTION                          DEV RESPONSE                    K8S REACTION
 ─────────────────────────────────────────────────────────────────────────────
 
@@ -118,6 +118,7 @@ OPS ACTION                          DEV RESPONSE                    K8S REACTION
 **Job:** Respond correctly when asked about health  
 
 ✅ **Simple contract:**
+
 1. `/health` → Always return 200 (app is running)
 2. `/ready` → Return 200 or 503 based on config file
 3. `@app.before_request` → Return 503 to users if maintenance flag exists
@@ -130,6 +131,7 @@ OPS ACTION                          DEV RESPONSE                    K8S REACTION
 **Job:** Control traffic routing based on health checks
 
 ✅ **Kubernetes does the heavy lifting:**
+
 1. Watches readiness probe responses
 2. Adds/removes pods from Service endpoints automatically
 3. ConfigMap provides centralized config distribution
@@ -142,10 +144,16 @@ OPS ACTION                          DEV RESPONSE                    K8S REACTION
 ### ❌ **NOT Doing (Complexity Removed)**
 
 - ~~Session replication~~  
-  *Each pod tracks its own sessions. Redis available for cross-pod visibility.*
+  *Demo doesn't track sessions. Focus is on maintenance mode pattern.*
 
 - ~~SSE for maintenance alerts~~  
   *Removed. Just return 503, let client retry.*
+
+### ✅ **Optional: Redis for Demo Mode**
+
+- Used for button state sync across pods during live demos
+- Shows instant cross-pod behavior (better presentation)
+- Production still uses ConfigMap (proper Kubernetes pattern)
 
 - ~~Graceful shutdown SSE~~  
   *Removed. SIGTERM already handled by K8s termination grace period.*
@@ -178,7 +186,7 @@ def check_maintenance():
 
 ## File Structure Simplification
 
-```
+```text
 demo/
 ├── app.py                  # 300 lines (was 1289!)
 │   ├── Health checks
@@ -206,18 +214,21 @@ demo/
 ## Testing the Flow
 
 ### 1. Normal Operation
+
 ```bash
 curl http://localhost:9090/        # → User page (200)
 curl http://localhost:9092/admin   # → Admin page (200)
 ```
 
 ### 2. Enable Maintenance
+
 ```bash
 kubectl patch configmap sample-app-config -n sample-app \
   -p '{"data":{"maintenance":"true"}}'
 ```
 
 ### 3. Verify Behavior
+
 ```bash
 # Wait 10s for readiness probe cycle
 sleep 10
@@ -233,6 +244,7 @@ curl http://localhost:9092/admin
 ```
 
 ### 4. Check Kubernetes
+
 ```bash
 kubectl get endpoints -n sample-app sample-app-user
 # → Shows 0 pods (removed from service)
