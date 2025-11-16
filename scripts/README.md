@@ -2,11 +2,11 @@
 
 PowerShell automation scripts for managing the Kubernetes maintenance mode demo.
 
-## Quick Reference
+## Available Scripts
 
 | Script | Purpose | Usage |
 |--------|---------|-------|
-| `runme.ps1` | Main automation script | `.\runme.ps1 -Action setup` |
+| `runme.ps1` | Main automation script | `.\runme.ps1 setup` |
 | `teardown.ps1` | Complete teardown with multiple modes | `.\teardown.ps1` |
 | `test-endpoints.ps1` | Comprehensive endpoint testing | `.\test-endpoints.ps1` |
 
@@ -22,27 +22,27 @@ PowerShell automation scripts for managing the Kubernetes maintenance mode demo.
 
 ```powershell
 # Initial setup (build + deploy everything)
-.\runme.ps1 -Action setup
+.\runme.ps1 setup
 
 # Enable maintenance mode
-.\runme.ps1 -Action enable
+.\runme.ps1 enable
 
 # Disable maintenance mode
-.\runme.ps1 -Action disable
+.\runme.ps1 disable
 
 # Check current status
-.\runme.ps1 -Action status
+.\runme.ps1 status
 
 # Clean up everything (basic)
-.\runme.ps1 -Action clean
+.\runme.ps1 clean
 ```
 
 **What it does:**
 
-- **setup**: Starts Minikube, enables ingress, builds Docker image, deploys all Kubernetes resources
+- **setup**: Starts Minikube, builds Docker image, deploys all Kubernetes resources, opens service tunnels
 - **enable**: Sets maintenance mode ON via Redis
 - **disable**: Sets maintenance mode OFF via Redis
-- **status**: Shows pod status, endpoints, and maintenance mode state
+- **status**: Shows pod status, maintenance mode state, and service tunnel URLs
 - **clean**: Deletes namespace and stops Minikube (basic cleanup)
 
 **Prerequisites:** Docker Desktop running, Minikube installed
@@ -117,26 +117,6 @@ PowerShell automation scripts for managing the Kubernetes maintenance mode demo.
 
 ---
 
-### test-all-buttons.ps1
-
-**Test all admin UI buttons** - Automated UI testing.
-
-```powershell
-.\test-all-buttons.ps1
-```
-
-**What it tests:**
-
-- Enable/disable maintenance buttons
-- Health check endpoint
-- Readiness probe endpoint
-- Admin dashboard access
-- User routes during maintenance
-
-**Prerequisites:** Service tunnel to admin service (opened by runme.ps1 setup)
-
----
-
 ## Common Workflows
 
 ### First-Time Setup
@@ -145,7 +125,7 @@ PowerShell automation scripts for managing the Kubernetes maintenance mode demo.
 # 1. Start Docker Desktop (wait for it to be ready)
 
 # 2. Run automated setup
-.\runme.ps1 -Action setup
+.\runme.ps1 setup
 
 # 3. Access via service tunnels
 # Check the tunnel windows for access URLs (usually 127.0.0.1:xxxxx)
@@ -155,7 +135,7 @@ PowerShell automation scripts for managing the Kubernetes maintenance mode demo.
 
 ```powershell
 # 1. Setup and deploy
-.\runme.ps1 -Action setup
+.\runme.ps1 setup
 
 # 2. Access application via service tunnels
 # Check the tunnel windows for auto-assigned URLs (e.g., http://127.0.0.1:52511)
@@ -163,13 +143,13 @@ PowerShell automation scripts for managing the Kubernetes maintenance mode demo.
 # 3. Enable maintenance mode
 # Option A: Via admin panel button
 # Option B: Via CLI
-.\runme.ps1 -Action enable
+.\runme.ps1 enable
 
 # 4. Verify behavior
 .\test-endpoints.ps1
 
 # 5. Disable maintenance mode
-.\runme.ps1 -Action disable
+.\runme.ps1 disable
 ```
 
 ### Development Workflow
@@ -178,7 +158,7 @@ PowerShell automation scripts for managing the Kubernetes maintenance mode demo.
 # 1. Edit app.py
 
 # 2. Rebuild image and restart pods
-.\runme.ps1 -Action setup
+.\runme.ps1 setup
 
 # 3. Test changes
 .\test-endpoints.ps1
@@ -191,7 +171,7 @@ kubectl logs -n sample-app deployment/sample-app-user --tail=50
 
 ```powershell
 # Check overall status
-.\runme.ps1 -Action status
+.\runme.ps1 status
 
 # Run comprehensive tests
 .\test-endpoints.ps1

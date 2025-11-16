@@ -442,8 +442,8 @@ without being locked out by the maintenance mode itself.
 - [DESIGN.md](DESIGN.md) - Architecture and design philosophy
 - [CONTRIBUTING.md](CONTRIBUTING.md) - Development guidelines
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) - Troubleshooting guide
-- [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) - Project structure
 - [docs/GITHUB_SETUP.md](docs/GITHUB_SETUP.md) - GitHub configuration
+- [scripts/README.md](scripts/README.md) - PowerShell automation scripts
 
 ---
 
