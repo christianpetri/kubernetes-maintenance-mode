@@ -87,7 +87,8 @@ switch ($Action) {
             kubectl wait --for=condition=ready pod -l app=sample-app,tier=user -n sample-app --timeout=120s
         }
         
-        Write-Host "\n[OK] Setup complete!" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "[OK] Setup complete!" -ForegroundColor Green
         
         # Start service tunnels for direct access
         Write-Host "`nStarting service tunnels..." -ForegroundColor Yellow
@@ -138,13 +139,18 @@ minikube service sample-app-admin -n sample-app
         kubectl rollout status deployment sample-app-admin -n sample-app --timeout=60s
         kubectl rollout status deployment sample-app-user -n sample-app --timeout=60s
         
-        Write-Host "\n[OK] Maintenance mode enabled!" -ForegroundColor Green
-        Write-Host "`nPod status:" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "[OK] Maintenance mode enabled!" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Pod status:" -ForegroundColor Cyan
         kubectl get pods -n sample-app
         
-        Write-Host "\nExpected behavior:" -ForegroundColor Yellow
-        Write-Host "  - Admin pods: 1/1 Ready (ALWAYS accessible)" -ForegroundColor Green
-        Write-Host "  - User pods:  0/1 Not Ready (removed from Service)" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Expected behavior:" -ForegroundColor Yellow
+        Write-Host "  - Admin pods (sample-app-admin-*): 1/1 Ready (ALWAYS accessible)" -ForegroundColor Green
+        Write-Host "  - User pods (sample-app-user-*):  0/1 Not Ready (removed from Service)" -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Note: Both pod types run identical code - behavior differs only via ADMIN_ACCESS env var" -ForegroundColor Cyan
     }
     
     'disable' {
@@ -163,11 +169,14 @@ minikube service sample-app-admin -n sample-app
         kubectl rollout status deployment sample-app-admin -n sample-app --timeout=60s
         kubectl rollout status deployment sample-app-user -n sample-app --timeout=60s
         
-        Write-Host "\n[OK] Maintenance mode disabled!" -ForegroundColor Green
-        Write-Host "`nPod status:" -ForegroundColor Cyan
+        Write-Host ""
+        Write-Host "[OK] Maintenance mode disabled!" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Pod status:" -ForegroundColor Cyan
         kubectl get pods -n sample-app
         
-        Write-Host "\nAll pods should be 1/1 Ready" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "All pods should be 1/1 Ready" -ForegroundColor Green
     }
     
     'status' {
@@ -232,7 +241,8 @@ minikube service sample-app-admin -n sample-app
             Write-Host "[OK] Minikube already stopped" -ForegroundColor Green
         }
         
-        Write-Host "\n[OK] Cleanup complete!" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "[OK] Cleanup complete!" -ForegroundColor Green
     }
 }
 

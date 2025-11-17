@@ -240,6 +240,9 @@ The key innovation is using **separate deployments with different readiness prob
 - Pods stay **in Service** (always receives traffic)
 - Guarantees admin access to disable maintenance
 
+**Critical:** Both deployments use the **same Docker image and code** (`sample-app:latest`).
+The only difference is the `ADMIN_ACCESS` environment variable, which changes readiness behavior.
+
 ### Health Probes Explained
 
 **Liveness Probe** (`/health`):
@@ -309,8 +312,8 @@ This ensures **administrators can always reach the control panel** to disable ma
 .\scripts\runme.ps1 status
 # Output:
 # Maintenance Mode is ON
-# sample-app-admin-xxx   1/1     Running   (ALWAYS READY)
-# sample-app-user-xxx    0/1     Running   (NOT READY - removed from Service)
+# sample-app-admin-xxx   1/1     Running   (ALWAYS READY - Admin pod)
+# sample-app-user-xxx    0/1     Running   (NOT READY - User pod removed from Service)
 ```
 
 **4. Verify traffic routing:**
@@ -479,6 +482,17 @@ without being locked out by the maintenance mode itself.
 ## Contributing
 
 Feel free to submit issues and enhancement requests!
+
+## Acknowledgments
+
+This project was developed with assistance from Claude (Anthropic), an AI assistant that helped with:
+
+- Code architecture and implementation
+- Documentation writing and review
+- Best practices and design patterns
+- Testing and quality assurance
+
+All code and documentation remain the responsibility of the project maintainer.
 
 ## License
 
