@@ -316,6 +316,8 @@ This ensures **administrators can always reach the control panel** to disable ma
 # sample-app-user-xxx    0/1     Running   (NOT READY - User pod removed from Service)
 ```
 
+**Tip:** Notice the pod names - `admin` vs `user` in the name helps identify which pods are always accessible.
+
 **4. Verify traffic routing:**
 
 - User endpoint: Connection refused (pods removed from service)
@@ -465,7 +467,7 @@ without being locked out by the maintenance mode itself.
 2. **Graceful Degradation**: User pods removed from Service (not restarted) during maintenance
 3. **Clear HTTP Semantics**: 503 for maintenance, 200 for admin access
 4. **ConfigMap-Based Toggle**: Simple `kubectl patch` to enable/disable maintenance
-5. **Pod Status Verification**: `kubectl get pods` shows the architecture working (admin 1/1, user 0/1)
+5. **Pod Naming Clarity**: Check pod names (`sample-app-admin-*` vs `sample-app-user-*`) to see which are ready
 
 ## Further Reading
 

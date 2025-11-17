@@ -27,6 +27,9 @@ app = Flask(__name__)
 
 # Configuration
 MAINTENANCE_FILE = Path(os.getenv("MAINTENANCE_FILE", "/config/maintenance"))
+# KEY DIFFERENCE: Admin and user pods run identical code - only this env var differs
+# Admin pods: ADMIN_ACCESS=true  (always accessible via /admin routes)
+# User pods:  ADMIN_ACCESS=false (blocked during maintenance mode)
 IS_ADMIN_POD = os.getenv("ADMIN_ACCESS", "").lower() == "true"
 POD_NAME = os.getenv("HOSTNAME", "local")
 
@@ -157,7 +160,7 @@ def index():
         Rendered HTML template showing application status and
         demonstration instructions.
     """
-    return render_template_string(INDEX_TEMPLATE, pod_name=POD_NAME)
+    return render_template_string(INDEX_TEMPLATE, pod_name=POD_NAME, is_admin_pod=IS_ADMIN_POD)
 
 
 @app.route("/admin")
@@ -326,9 +329,22 @@ INDEX_TEMPLATE = """
             margin: 20px 0;
             border-left: 4px solid #667eea;
         }
+        .pod-type {
+            color: #667eea;
+            font-weight: 600;
+        }
         .status {
             display: inline-block;
             background: #48bb78;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .user-badge {
+            display: inline-block;
+            background: #667eea;
             color: white;
             padding: 6px 12px;
             border-radius: 20px;
@@ -342,6 +358,29 @@ INDEX_TEMPLATE = """
         }
         a:hover {
             text-decoration: underline;
+        }
+        .admin-link {
+            display: inline-block;
+            background: #f5576c;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: background 0.2s;
+            margin: 10px 0;
+        }
+        .admin-link:hover {
+            background: #e04556;
+            text-decoration: none;
+        }
+        .help-text {
+            font-size: 13px;
+            color: #718096;
+            text-align: center;
+            margin-top: 8px;
+            line-height: 1.5;
         }
         code {
             background: #2d3748;
@@ -401,35 +440,134 @@ INDEX_TEMPLATE = """
 
         <div class="pod-info">
             <strong>Pod:</strong> {{ pod_name }}<br>
+            <strong>Type:</strong>
+            {% if is_admin_pod %}
+                <span class="admin-badge">ADMIN POD</span>
+            {% else %}
+                <span class="user-badge">USER POD</span>
+            {% endif %}
+            <br>
             <strong>Status:</strong> <span class="status">Operational</span>
         </div>
 
-        <h2>What This Demonstrates</h2>
-        <ul>
-            <li><strong>Flask Best Practice:</strong> <code>@app.before_request</code> decorator</li>
-            <li><strong>Readiness Probes:</strong> Kubernetes traffic control</li>
-            <li><strong>Graceful Degradation:</strong> 503 with Retry-After header</li>
-            <li><strong>Admin Access:</strong> Separate deployment always available</li>
+        {% if is_admin_pod %}
+        <div style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #f5576c; margin: 20px 0;">
+            <strong style="color: #2d3748; font-size: 16px;">🎛️ Admin Service Detected</strong>
+            <p style="margin: 10px 0 15px 0; color: #4a5568;">You are viewing the admin service. Click below to access the control panel and manage maintenance mode.</p>
+            <a href="/admin" style="display: inline-block; background: #f5576c; color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600;">→ Open Admin Control Panel</a>
+        </div>
+
+        <h2>What This Demo Shows</h2>
+        <ul style="line-height: 1.8;">
+            <li>Graceful maintenance mode with zero downtime for administrators</li>
+            <li>Admin access preserved during maintenance windows</li>
+            <li>Automatic traffic routing via Kubernetes readiness probes</li>
+            <li>Industry-standard HTTP 503 error handling with retry instructions</li>
         </ul>
 
-        <h2>Try It</h2>
-        <p><a href="/admin">→ Open Admin Panel</a> to toggle maintenance mode</p>
+        <h2>How to Test</h2>
+        <ol style="line-height: 1.8; background: #f7fafc; padding: 20px 20px 20px 40px; border-radius: 8px; margin: 20px 0;">
+            <li><strong>Click "Open Admin Control Panel"</strong> above to access maintenance controls</li>
+            <li><strong>Enable maintenance mode</strong> using the toggle button</li>
+            <li><strong>Observe the behavior:</strong>
+                <ul style="margin-top: 8px; color: #4a5568;">
+                    <li>Active user sessions see a warning banner with countdown</li>
+                    <li>New requests fail with connection refused (pods removed from service)</li>
+                    <li>Kubernetes Service stops routing to user pods (readiness probe failure)</li>
+                </ul>
+            </li>
+            <li><strong>Return to admin panel</strong> to disable maintenance and restore service</li>
+        </ol>
+        <p style="background: #e6fffa; padding: 12px; border-radius: 6px; border-left: 4px solid #38b2ac; margin-top: 15px; font-size: 14px;">
+            <strong>📝 Production Difference:</strong> External load balancer would serve a static "We'll be back soon" page instead of connection refused.
+        </p>
+        {% else %}
+        <h2>What This Demo Shows</h2>
+        <ul style="line-height: 1.8;">
+            <li>Graceful maintenance mode with zero downtime for administrators</li>
+            <li>Admin access preserved during maintenance windows</li>
+            <li>Automatic traffic routing via Kubernetes readiness probes</li>
+            <li>Industry-standard HTTP 503 error handling with retry instructions</li>
+        </ul>
 
-        <h3>Demo Mode (Quick Test)</h3>
-        <p style="background: #fffaf0; padding: 12px; border-radius: 6px; border-left: 4px solid #ed8936;">
-            Click the button in admin panel to see the UI flow.<br>
-            <small><em>With Redis: Syncs across all pods instantly | Without Redis: Affects this pod only</em></small>
+        <h2>How to Access Admin Controls</h2>
+        <p style="background: #fff5f5; padding: 15px; border-radius: 8px; border-left: 4px solid #f5576c; margin: 20px 0;">
+            <strong style="color: #2d3748;">To toggle maintenance mode, you need admin access:</strong><br><br>
+            Open the <strong>admin service URL</strong> in a separate browser tab to access the control panel.<br>
+            <small style="color: #718096; display: block; margin-top: 8px;">(The admin service runs on a separate endpoint from this user service)</small>
         </p>
 
-        <h3>Production Mode (Kubernetes)</h3>
-        <pre style="background: #2d3748; color: #48bb78; padding: 15px; border-radius: 8px; overflow-x: auto;"># Update ConfigMap (affects all pods)
+        <h2>Demo Flow</h2>
+        <ol style="line-height: 1.8; background: #fffaf0; padding: 20px 20px 20px 40px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ed8936;">
+            <li><strong>Access admin service</strong> using the admin service URL (separate endpoint)</li>
+            <li><strong>Enable maintenance mode</strong> via the admin control panel button</li>
+            <li><strong>Watch this page</strong> - a warning banner appears with a 30-second countdown, then shows 503 maintenance message</li>
+            <li><strong>Open user service in a new tab</strong> - connection fails (ERR_CONNECTION_RESET) because Kubernetes removes unhealthy pods from service</li>
+            <li><strong>Return to admin service</strong> to disable maintenance and restore normal operation</li>
+        </ol>
+        <p style="background: #e6fffa; padding: 12px; border-radius: 6px; border-left: 4px solid #38b2ac; margin-top: 15px; font-size: 14px;">
+            <strong>Production Difference:</strong> External load balancer would serve a static "We'll be back soon" page instead of connection refused.
+        </p>
+        {% endif %}
+
+        <details style="margin: 20px 0;">
+            <summary style="cursor: pointer; font-weight: 600; color: #2d3748; padding: 10px; background: #f7fafc; border-radius: 6px;">📋 Technical Implementation Details</summary>
+            <div style="padding: 15px; background: #f7fafc; border-radius: 6px; margin-top: 10px;">
+                <h4 style="margin-top: 0;">Architecture Pattern</h4>
+                <ul style="line-height: 1.8;">
+                    <li><strong>Flask Best Practice:</strong> <code>@app.before_request</code> decorator for centralized request filtering</li>
+                    <li><strong>Kubernetes Readiness Probes:</strong> Automatic traffic control via health checks</li>
+                    <li><strong>Dual Deployment:</strong> Separate admin and user pod deployments</li>
+                    <li><strong>HTTP 503 Response:</strong> Standard Service Unavailable with Retry-After header</li>
+                </ul>
+                <h4>State Synchronization</h4>
+                <ul style="line-height: 1.8;">
+                    <li><strong>Demo (with Redis):</strong> Maintenance state syncs instantly across all pods (ideal for demonstrations)</li>
+                    <li><strong>Demo (without Redis):</strong> Changes affect only the current pod (local testing)</li>
+                    <li><strong>Production:</strong> ConfigMap updates with deployment restarts (Kubernetes native pattern)</li>
+                </ul>
+                <h4>Maintenance Page Delivery</h4>
+                <ul style="line-height: 1.8;">
+                    <li><strong>This Demo:</strong> Application pods serve the 503 maintenance page via <code>@app.before_request</code> (simplifies demo - no external infrastructure needed)</li>
+                    <li><strong>Production:</strong> External load balancer (nginx, HAProxy, cloud ALB) serves static maintenance HTML independently, bypassing application entirely and ensuring availability during complete outages</li>
+                </ul>
+                <h4>Traffic Routing</h4>
+                <ul style="line-height: 1.8;">
+                    <li><strong>This Demo:</strong> Kubernetes Service removes unhealthy pods from endpoints based on readiness probes</li>
+                    <li><strong>Production:</strong> External load balancer health checks determine routing, typically with static maintenance page served at load balancer level before reaching Kubernetes</li>
+                </ul>
+            </div>
+        </details>
+
+        <details style="margin: 20px 0;">
+            <summary style="cursor: pointer; font-weight: 600; color: #2d3748; padding: 10px; background: #e6fffa; border-radius: 6px;">⚙️ Production Deployment with Kubernetes</summary>
+            <div style="padding: 15px; background: #e6fffa; border-radius: 6px; margin-top: 10px;">
+                <p style="color: #2d3748; margin-top: 0;">In production environments, use kubectl to manage maintenance mode:</p>
+
+                <h4 style="margin-top: 15px;">Enable Maintenance</h4>
+                <pre style="background: #2d3748; color: #48bb78; padding: 15px; border-radius: 8px; overflow-x: auto;"># Update ConfigMap
 kubectl patch configmap sample-app-config -n sample-app \\
   -p '{"data":{"maintenance":"true"}}'
 
-# Restart to apply (automatic in production with volume mounts)
+# Restart user deployment
 kubectl rollout restart deployment/sample-app-user -n sample-app</pre>
 
-        <p>Then watch this page return 503 while admin stays accessible!</p>
+                <h4>Disable Maintenance</h4>
+                <pre style="background: #2d3748; color: #48bb78; padding: 15px; border-radius: 8px; overflow-x: auto;"># Update ConfigMap
+kubectl patch configmap sample-app-config -n sample-app \\
+  -p '{"data":{"maintenance":"false"}}'
+
+# Restart user deployment
+kubectl rollout restart deployment/sample-app-user -n sample-app</pre>
+
+                <h4>Verify Status</h4>
+                <pre style="background: #2d3748; color: #48bb78; padding: 15px; border-radius: 8px; overflow-x: auto;"># Check service endpoints
+kubectl get endpoints -n sample-app
+
+# Check pod readiness
+kubectl get pods -n sample-app -o wide</pre>
+            </div>
+        </details>
     </div>
 
     <script>
@@ -576,31 +714,39 @@ ADMIN_TEMPLATE = """
 
         <div class="pod-info">
             <strong>Pod:</strong> {{ pod_name }}<br>
-            <strong>Type:</strong> <span class="admin-badge">ADMIN POD</span><br>
-            <strong>Always Accessible:</strong> Yes
+            <strong>Type:</strong> <span class="admin-badge">ADMIN POD</span>
         </div>
 
         <div class="status-box">
             <h2>Maintenance Mode Status</h2>
             {% if maintenance %}
-                <p class="status-on">ENABLED - User pods returning 503</p>
+                <p class="status-on">ENABLED - User service returning 503 errors</p>
+                <p style="margin-top: 15px;">
+                    <a href="/" target="_blank" style="color: #667eea; text-decoration: none; font-weight: 600; font-size: 14px;">
+                        → View maintenance page (opens in new tab)
+                    </a>
+                </p>
+                <p style="margin-top: 10px; font-size: 13px; color: #666; font-style: italic;">
+                    <strong>Demo Setup:</strong> This maintenance page is served from application pods. Admin service remains accessible independently.<br>
+                    <strong>Production Setup:</strong> External load balancer (nginx, HAProxy, cloud ALB) would serve a static maintenance page. Admin access via separate internal endpoint.
+                </p>
             {% else %}
-                <p class="status-off">DISABLED - All pods operational</p>
+                <p class="status-off">DISABLED - All services operational</p>
             {% endif %}
         </div>
 
         <div class="warning">
-            <strong>Demo vs Production</strong><br>
-            <strong>DEMO MODE (with Redis):</strong> Button syncs across ALL pods instantly (best for live demos)<br>
-            <strong>DEMO MODE (without Redis):</strong> Button affects THIS pod only<br>
-            <strong>PRODUCTION:</strong> Use kubectl to update ConfigMap (proper Kubernetes pattern)
+            <strong>Demo vs Production Modes</strong><br>
+            <strong>DEMO (with Redis):</strong> Button syncs maintenance state across all pods instantly (ideal for live demonstrations)<br>
+            <strong>DEMO (without Redis):</strong> Button affects only this pod (local testing)<br>
+            <strong>PRODUCTION:</strong> Use kubectl commands to update ConfigMap (proper Kubernetes pattern)
         </div>
 
         <button onclick="toggleMaintenance()" id="toggleBtn">
             {% if maintenance %}Disable{% else %}Enable{% endif %} Maintenance (Demo)
         </button>
         <p style="font-size: 14px; color: #718096; margin-top: 10px;">
-            ↑ Click to see the UI flow (demo mode - this pod only)
+            Click the button above to toggle maintenance mode and observe the user interface behavior.
         </p>
 
         <h2>Production Usage (Kubernetes)</h2>
@@ -628,16 +774,16 @@ kubectl get pods -n sample-app -o wide</pre>
 
         <h3>Production Integration</h3>
         <p style="background: #f0f9ff; padding: 15px; border-radius: 8px; border-left: 4px solid #3b82f6;">
-            <strong>In real production systems:</strong><br>
-            • Integrate kubectl commands into CI/CD pipeline (Jenkins, GitLab CI, etc.)<br>
-            • Use Kubernetes operators or custom controllers<br>
-            • Build admin dashboard that calls kubectl API<br>
-            • Add approval workflows and audit logging<br>
-            • Monitor active sessions before enabling maintenance
+            <strong>Production Implementation Recommendations:</strong><br>
+            • Integrate kubectl commands into your CI/CD pipeline (Jenkins, GitLab CI, GitHub Actions, etc.)<br>
+            • Use Kubernetes operators or custom controllers for automated management<br>
+            • Build an admin dashboard that interfaces with the kubectl API<br>
+            • Implement approval workflows and comprehensive audit logging<br>
+            • Monitor active user sessions before enabling maintenance mode
         </p>
 
         <p style="margin-top: 30px;">
-            <a href="/">← Back to User View</a>
+            <a href="/" style="color: #667eea; text-decoration: none; font-weight: 600;">← Back to Landing Page</a>
         </p>
     </div>
 
@@ -722,18 +868,27 @@ MAINTENANCE_TEMPLATE = """
 </head>
 <body>
     <div class="card">
-        <div class="icon">Service Under Maintenance</div>
+        <div class="icon">🔧</div>
         <h1>Service Temporarily Unavailable</h1>
-        <p>We're performing scheduled maintenance to improve your experience.</p>
+        <p>We are performing scheduled maintenance to improve your experience.</p>
         <p>This page will automatically refresh in 5 minutes.</p>
 
         <div class="retry">
-            <strong>HTTP 503</strong> with <code>Retry-After: 300</code> header<br>
-            <small>Pod: {{ pod_name }}</small>
+            <strong>HTTP 503 Service Unavailable</strong><br>
+            <code>Retry-After: 300</code> header included<br>
+            <small style="color: #718096;">Pod: {{ pod_name }}</small>
         </div>
 
-        <p style="font-size: 14px; color: #718096;">
-            Admin access remains available during maintenance.
+        <p style="font-size: 14px; color: #718096; margin-top: 20px;">
+            <strong>Note:</strong> Administrative access remains available during maintenance.
+        </p>
+
+        <p style="margin-top: 20px; text-align: center;">
+            <a href="/" target="_blank" style="display: inline-block; color: #667eea; text-decoration: none; font-weight: 600; padding: 10px 20px; border: 2px solid #667eea; border-radius: 6px;">
+                ↻ Try accessing the service again
+            </a>
+            <br>
+            <small style="display: block; margin-top: 8px; color: #a0aec0;">(Will show this maintenance page while service is down)</small>
         </p>
     </div>
 </body>

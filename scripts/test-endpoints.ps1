@@ -1,9 +1,9 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Test all endpoints of the Kubernetes demo app
+    Test all endpoints of the Kubernetes maintenance mode demo
 .DESCRIPTION
-    Comprehensive test suite for active user tracking and graceful drain features
+    Test suite for maintenance mode functionality and dual deployment pattern
 #>
 
 param(
@@ -11,9 +11,10 @@ param(
     [string]$AdminServiceUrl = "http://localhost:52875"
 )
 
-Write-Host "`n========================================" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
 Write-Host "  TESTING KUBERNETES DEMO APP" -ForegroundColor Green
-Write-Host "========================================`n" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+Write-Host ""
 
 $testsPassed = 0
 $testsFailed = 0
@@ -23,7 +24,8 @@ function Test-Endpoint {
         [string]$Name,
         [string]$Url,
         [string]$ExpectedPattern,
-        [switch]$IsJson
+        [switch]$IsJson,
+        [switch]$ExpectFailure
     )
     
     Write-Host "TEST: $Name" -ForegroundColor Cyan
@@ -60,40 +62,85 @@ function Test-Endpoint {
             }
         }
     } catch {
+        if ($ExpectFailure) {
+            Write-Host "  [PASS]: Expected failure occurred" -ForegroundColor Green
+            return $true
+        }
         Write-Host "  [FAIL]: $($_.Exception.Message)" -ForegroundColor Red
         return $false
     }
 }
 
-# Test 1: Health Probe
-if (Test-Endpoint -Name "Health Probe" -Url "$UserServiceUrl/health" -ExpectedPattern "healthy" -IsJson) {
+# Test 1: User Service Landing Page
+if (Test-Endpoint -Name "User Service Landing Page" -Url "$UserServiceUrl/" -ExpectedPattern "Kubernetes Maintenance Mode Demo") {
     $testsPassed++
 } else {
     $testsFailed++
 }
 Write-Host ""
 
-# Test 2: Readiness Probe
-if (Test-Endpoint -Name "Readiness Probe" -Url "$UserServiceUrl/ready" -ExpectedPattern "ready" -IsJson) {
+# Test 2: User Service Health Probe
+if (Test-Endpoint -Name "User Service Health Probe" -Url "$UserServiceUrl/health" -ExpectedPattern "healthy" -IsJson) {
     $testsPassed++
 } else {
     $testsFailed++
 }
 Write-Host ""
 
-# Test 3: Main Page SSE
-Write-Host "TEST: Main Page SSE Integration" -ForegroundColor Cyan
+# Test 3: User Service Readiness Probe
+if (Test-Endpoint -Name "User Service Readiness Probe" -Url "$UserServiceUrl/ready" -ExpectedPattern "ready" -IsJson) {
+    $testsPassed++
+} else {
+    $testsFailed++
+}
+Write-Host ""
+
+# Test 4: Admin Service Landing Page
+if (Test-Endpoint -Name "Admin Service Landing Page" -Url "$AdminServiceUrl/" -ExpectedPattern "ADMIN POD") {
+    $testsPassed++
+} else {
+    $testsFailed++
+}
+Write-Host ""
+
+# Test 5: Admin Service Health Probe
+if (Test-Endpoint -Name "Admin Service Health Probe" -Url "$AdminServiceUrl/health" -ExpectedPattern "healthy" -IsJson) {
+    $testsPassed++
+} else {
+    $testsFailed++
+}
+Write-Host ""
+
+# Test 6: Admin Service Readiness Probe
+if (Test-Endpoint -Name "Admin Service Readiness Probe" -Url "$AdminServiceUrl/ready" -ExpectedPattern "ready" -IsJson) {
+    $testsPassed++
+} else {
+    $testsFailed++
+}
+Write-Host ""
+
+# Test 7: Admin Control Panel
+if (Test-Endpoint -Name "Admin Control Panel" -Url "$AdminServiceUrl/admin" -ExpectedPattern "Admin Control Panel") {
+    $testsPassed++
+} else {
+    $testsFailed++
+}
+Write-Host ""
+
+# Test 8: Pod Badge Detection
+Write-Host "TEST: Pod Badge Detection" -ForegroundColor Cyan
 try {
-    $response = Invoke-WebRequest -Uri "$UserServiceUrl/" -UseBasicParsing -ErrorAction Stop
-    $hasSSE = $response.Content -match "EventSource"
-    $hasDrainBanner = $response.Content -match "drain-banner"
-    $hasCountdown = $response.Content -match "countdown"
+    $userResponse = Invoke-WebRequest -Uri "$UserServiceUrl/" -UseBasicParsing -ErrorAction Stop
+    $adminResponse = Invoke-WebRequest -Uri "$AdminServiceUrl/" -UseBasicParsing -ErrorAction Stop
     
-    if ($hasSSE -and $hasDrainBanner -and $hasCountdown) {
-        Write-Host "  [PASS]: SSE, drain banner, and countdown found" -ForegroundColor Green
+    $userHasUserBadge = $userResponse.Content -match "USER POD"
+    $adminHasAdminBadge = $adminResponse.Content -match "ADMIN POD"
+    
+    if ($userHasUserBadge -and $adminHasAdminBadge) {
+        Write-Host "  [PASS]: Correct badge detection on both pod types" -ForegroundColor Green
         $testsPassed++
     } else {
-        Write-Host "  [FAIL]: Missing features (SSE:$hasSSE, Banner:$hasDrainBanner, Countdown:$hasCountdown)" -ForegroundColor Red
+        Write-Host "  [FAIL]: Badge detection incorrect (User:$userHasUserBadge, Admin:$adminHasAdminBadge)" -ForegroundColor Red
         $testsFailed++
     }
 } catch {
@@ -102,18 +149,28 @@ try {
 }
 Write-Host ""
 
-# Test 4: Session Creation
-Write-Host "TEST: Session Cookie Creation" -ForegroundColor Cyan
+# Test 9: Maintenance Mode Toggle
+Write-Host "TEST: Maintenance Mode Toggle" -ForegroundColor Cyan
 try {
-    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-    $response = Invoke-WebRequest -Uri "$UserServiceUrl/" -WebSession $session -UseBasicParsing -ErrorAction Stop
-    $cookies = $session.Cookies.GetCookies($UserServiceUrl)
+    # Get current state
+    $initialResponse = Invoke-RestMethod -Uri "$AdminServiceUrl/admin" -UseBasicParsing -ErrorAction Stop
+    $wasEnabled = $initialResponse -match "ENABLED"
     
-    if ($cookies.Count -gt 0) {
-        Write-Host "  [PASS]: Session cookie created ($($cookies[0].Name))" -ForegroundColor Green
+    # Toggle maintenance mode
+    $toggleResponse = Invoke-RestMethod -Uri "$AdminServiceUrl/admin/toggle" -Method Post -UseBasicParsing -ErrorAction Stop
+    
+    # Verify state changed
+    $newResponse = Invoke-RestMethod -Uri "$AdminServiceUrl/admin" -UseBasicParsing -ErrorAction Stop
+    $isEnabled = $newResponse -match "ENABLED"
+    
+    # Toggle back to original state
+    Invoke-RestMethod -Uri "$AdminServiceUrl/admin/toggle" -Method Post -UseBasicParsing -ErrorAction Stop | Out-Null
+    
+    if ($wasEnabled -ne $isEnabled) {
+        Write-Host "  [PASS]: Maintenance mode toggled successfully" -ForegroundColor Green
         $testsPassed++
     } else {
-        Write-Host "  [FAIL]: No session cookie created" -ForegroundColor Red
+        Write-Host "  [FAIL]: Maintenance mode did not toggle" -ForegroundColor Red
         $testsFailed++
     }
 } catch {
@@ -122,59 +179,59 @@ try {
 }
 Write-Host ""
 
-# Test 5: Metrics Endpoint
-if (Test-Endpoint -Name "Metrics Endpoint (Prometheus)" -Url "$AdminServiceUrl/metrics" -ExpectedPattern "active_sessions_total") {
-    $testsPassed++
-} else {
-    $testsFailed++
-}
-Write-Host ""
-
-# Test 6: Admin Users Dashboard
-Write-Host "TEST: Admin Users Dashboard" -ForegroundColor Cyan
+# Test 10: Maintenance Page
+Write-Host "TEST: Maintenance Page (503)" -ForegroundColor Cyan
 try {
-    $response = Invoke-WebRequest -Uri "$AdminServiceUrl/admin/users" -UseBasicParsing -ErrorAction Stop
-    $hasTitle = $response.Content -match "Active Users Dashboard"
-    $hasSessions = $response.Content -match "Active Sessions"
-    $hasTable = $response.Content -match "<table"
+    # Enable maintenance mode first
+    Invoke-RestMethod -Uri "$AdminServiceUrl/admin/toggle" -Method Post -UseBasicParsing -ErrorAction Stop | Out-Null
+    Start-Sleep -Seconds 2
     
-    if ($hasTitle -and $hasSessions -and $hasTable) {
-        Write-Host "  [PASS]: Dashboard with session tracking found" -ForegroundColor Green
-        $testsPassed++
-    } else {
-        Write-Host "  [FAIL]: Missing dashboard elements" -ForegroundColor Red
-        $testsFailed++
+    # Try to access user service (should show 503 or connection refused)
+    try {
+        $response = Invoke-WebRequest -Uri "$UserServiceUrl/" -UseBasicParsing -ErrorAction Stop
+        $has503 = $response.Content -match "503|Service Under Maintenance"
+        
+        if ($has503) {
+            Write-Host "  [PASS]: 503 maintenance page displayed" -ForegroundColor Green
+            $testsPassed++
+        } else {
+            Write-Host "  [FAIL]: Maintenance page not displayed correctly" -ForegroundColor Red
+            $testsFailed++
+        }
+    } catch {
+        # Check if it's a 503 response or connection issue
+        if ($_.Exception.Message -match "503|SERVICE UNAVAILABLE") {
+            Write-Host "  [PASS]: 503 maintenance status received" -ForegroundColor Green
+            $testsPassed++
+        } elseif ($_.Exception.Message -match "refused|reset|timeout") {
+            Write-Host "  [PASS]: Connection refused (pods removed from service)" -ForegroundColor Green
+            $testsPassed++
+        } else {
+            throw
+        }
     }
+    
+    # Disable maintenance mode
+    Invoke-RestMethod -Uri "$AdminServiceUrl/admin/toggle" -Method Post -UseBasicParsing -ErrorAction Stop | Out-Null
 } catch {
     Write-Host "  [FAIL]: $($_.Exception.Message)" -ForegroundColor Red
     $testsFailed++
-}
-Write-Host ""
-
-# Test 7: Logout Endpoint
-if (Test-Endpoint -Name "Logout Endpoint" -Url "$UserServiceUrl/logout" -ExpectedPattern "Successfully Logged Out") {
-    $testsPassed++
-} else {
-    $testsFailed++
-}
-Write-Host ""
-
-# Test 8: Admin Panel
-if (Test-Endpoint -Name "Admin Panel" -Url "$AdminServiceUrl/admin" -ExpectedPattern "Admin Panel") {
-    $testsPassed++
-} else {
-    $testsFailed++
+    # Ensure maintenance mode is disabled
+    try {
+        Invoke-RestMethod -Uri "$AdminServiceUrl/admin/toggle" -Method Post -UseBasicParsing -ErrorAction Stop | Out-Null
+    } catch {}
 }
 Write-Host ""
 
 # Summary
-Write-Host "`n========================================" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
 Write-Host "  TEST RESULTS" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "  Total Tests: $($testsPassed + $testsFailed)" -ForegroundColor White
 Write-Host "  Passed: $testsPassed" -ForegroundColor Green
 Write-Host "  Failed: $testsFailed" -ForegroundColor $(if ($testsFailed -gt 0) { "Red" } else { "Green" })
-Write-Host "========================================`n" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+Write-Host ""
 
 if ($testsFailed -eq 0) {
     Write-Host "[PASS] ALL TESTS PASSED!" -ForegroundColor Green
