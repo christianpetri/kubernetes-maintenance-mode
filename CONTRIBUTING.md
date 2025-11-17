@@ -287,4 +287,5 @@ Open an issue or discussion on GitHub!
 
 ## License
 
-This project is for educational purposes.
+This project is released into the public domain under the Unlicense.
+Feel free to use, modify, and distribute without attribution.

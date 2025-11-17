@@ -108,7 +108,7 @@ Host documentation at `https://christianpetri.github.io/kubernetes-maintenance-m
 
 ## License File
 
-Add `LICENSE` file if not present. Recommended: Apache 2.0 (matches badge in README)
+The project uses the Unlicense (public domain). The LICENSE file is already present.
 
 ## GitHub Releases
 
